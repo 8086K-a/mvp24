@@ -20,7 +20,9 @@ async function checkWebhookStatus() {
       events.forEach((event, index) => {
         console.log(`   ${index + 1}. ${event.provider} - ${event.event_type}`);
         console.log(`      ID: ${event.id}`);
-        console.log(`      处理状态: ${event.processed ? '✅ 已处理' : '⏳ 未处理'}`);
+        console.log(
+          `      处理状态: ${event.processed ? "✅ 已处理" : "⏳ 未处理"}`
+        );
         console.log(`      创建时间: ${event.created_at}`);
         if (event.processed_at) {
           console.log(`      处理时间: ${event.processed_at}`);
@@ -45,7 +47,9 @@ async function checkWebhookStatus() {
         console.log(`   ${index + 1}. 用户: ${sub.user_id}`);
         console.log(`      计划: ${sub.plan_id}`);
         console.log(`      状态: ${sub.status}`);
-        console.log(`      提供商订阅ID: ${sub.provider_subscription_id || '无'}`);
+        console.log(
+          `      提供商订阅ID: ${sub.provider_subscription_id || "无"}`
+        );
         console.log(`      更新时间: ${sub.updated_at}`);
         console.log("");
       });
@@ -96,7 +100,6 @@ async function checkWebhookStatus() {
     }
 
     console.log("🎉 Webhook状态检查完成!");
-
   } catch (error) {
     console.error("❌ 检查过程中发生错误:", error);
   }

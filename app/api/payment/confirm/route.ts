@@ -188,28 +188,93 @@ async function handlePaymentConfirm(request: NextRequest) {
         }
       }
 
-      // 记录支付信息
+      // 记录或更新支付信息
       if (subscription && subscription.id) {
-        const { error: paymentError } = await supabaseAdmin
-          .from("payments")
-          .insert({
-            user_id: userId,
-            subscription_id: subscription.id,
-            amount: confirmation.amount,
-            currency: confirmation.currency,
-            status: "completed",
-            payment_method: paymentMethod,
-            transaction_id: confirmation.transactionId,
-          });
+        // 关键修复：首先查找是否已有 pending 状态的支付记录
+        const { data: existingPayment, error: findPaymentError } =
+          await supabaseAdmin
+            .from("payments")
+            .select("id, status, created_at")
+            .eq("user_id", userId)
+            .in("status", ["pending", "completed"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (paymentError) {
-          logError("payment_record_error", paymentError, {
+        if (findPaymentError && findPaymentError.code !== "PGRST116") {
+          logError("find_payment_error", findPaymentError, {
             operationId,
             userId,
             subscriptionId: subscription.id,
-            transactionId: confirmation.transactionId,
           });
-          // 不返回错误，因为主要操作已成功
+        }
+
+        if (existingPayment) {
+          // 更新现有的支付记录为 completed
+          if (existingPayment.status === "pending") {
+            logBusinessEvent("payment_update_to_completed", userId, {
+              operationId,
+              paymentId: existingPayment.id,
+              transactionId: confirmation.transactionId,
+            });
+
+            const { error: updatePaymentError } = await supabaseAdmin
+              .from("payments")
+              .update({
+                subscription_id: subscription.id,
+                status: "completed",
+                transaction_id: confirmation.transactionId,
+                amount: confirmation.amount,
+                currency: confirmation.currency,
+                updated_at: now.toISOString(),
+              })
+              .eq("id", existingPayment.id);
+
+            if (updatePaymentError) {
+              logError("payment_update_error", updatePaymentError, {
+                operationId,
+                userId,
+                paymentId: existingPayment.id,
+              });
+            }
+          } else {
+            // 已经是 completed 状态，可能是 webhook 先处理了
+            logBusinessEvent("payment_already_completed", userId, {
+              operationId,
+              paymentId: existingPayment.id,
+              existingStatus: existingPayment.status,
+            });
+          }
+        } else {
+          // 没有找到现有支付记录，创建新的（兜底逻辑）
+          logBusinessEvent("payment_create_new", userId, {
+            operationId,
+            subscriptionId: subscription.id,
+            transactionId: confirmation.transactionId,
+            note: "No existing payment found, creating new",
+          });
+
+          const { error: paymentError } = await supabaseAdmin
+            .from("payments")
+            .insert({
+              user_id: userId,
+              subscription_id: subscription.id,
+              amount: confirmation.amount,
+              currency: confirmation.currency,
+              status: "completed",
+              payment_method: paymentMethod,
+              transaction_id: confirmation.transactionId,
+            });
+
+          if (paymentError) {
+            logError("payment_record_error", paymentError, {
+              operationId,
+              userId,
+              subscriptionId: subscription.id,
+              transactionId: confirmation.transactionId,
+            });
+            // 不返回错误，因为主要操作已成功
+          }
         }
       }
 

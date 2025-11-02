@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAuth, createAuthErrorResponse } from "@/lib/auth";
 import { paymentRateLimit } from "@/lib/rate-limit";
 import { captureException } from "@/lib/sentry";
+import { ApiValidator, commonSchemas } from "@/lib/api-validation";
 
 // 订阅计划层级定义（时间累加模式下已不再使用）
 const PLAN_HIERARCHY = {
@@ -66,7 +67,20 @@ async function handlePaymentCreate(request: NextRequest) {
     }
 
     const { user } = authResult;
-    const body = await request.json();
+
+    // 验证请求体
+    const bodyValidation = await ApiValidator.validateBody(
+      request,
+      commonSchemas.createPayment
+    );
+
+    if (!bodyValidation.success) {
+      return NextResponse.json(
+        { success: false, error: bodyValidation.error },
+        { status: 400 }
+      );
+    }
+
     const {
       method,
       amount,
@@ -75,82 +89,67 @@ async function handlePaymentCreate(request: NextRequest) {
       planType,
       billingCycle,
       region,
-      idempotencyKey, // 幂等性键
-    } = body;
+      idempotencyKey,
+    } = bodyValidation.data;
 
     // 使用认证用户的ID
     const userId = user.id;
 
-    // 验证输入参数 - 时间累加模式下只需要基本的支付信息
-    if (!method || !amount || !currency || !billingCycle || !region) {
-      return NextResponse.json(
-        { success: false, error: "Missing required payment parameters" },
-        { status: 400 }
-      );
-    }
-
-    // 验证billingCycle
-    if (!["monthly", "yearly"].includes(billingCycle)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid billing cycle. Must be 'monthly' or 'yearly'",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 验证金额是否正确
-    const expectedAmount = billingCycle === "monthly" ? 9.99 : 99.99;
-    if (Math.abs(Number(amount) - expectedAmount) > 0.01) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid amount for ${billingCycle} subscription`,
-        },
-        { status: 400 }
-      );
-    }
-
     // 生成或使用幂等性键
     const key = idempotencyKey || `${userId}-${billingCycle}-${Date.now()}`;
 
-    // 检查是否已经处理过相同的请求（检查所有最近的支付，不仅仅是 pending 状态）
+    // 关键修复：更严格的重复检查 - 防止用户快速点击创建多个订单
+    // 检查最近1分钟内是否有相同的pending或completed支付
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
     const { data: recentPayments, error: checkError } = await supabaseAdmin
       .from("payments")
-      .select("*")
+      .select("id, status, created_at, transaction_id")
       .eq("user_id", userId)
       .eq("amount", Number(amount))
       .eq("currency", currency)
       .eq("payment_method", method)
-      .gte("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString()) // 最近5分钟内的支付
+      .gte("created_at", oneMinuteAgo)
+      .in("status", ["pending", "completed"]) // 只检查pending和completed状态
       .order("created_at", { ascending: false })
-      .limit(3); // 检查最近3条记录
+      .limit(1);
 
     if (checkError && checkError.code !== "PGRST116") {
       console.error("Error checking existing payment:", checkError);
+      // 即使检查失败，为了安全起见，也不创建新支付
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unable to verify payment uniqueness, please try again",
+        },
+        { status: 500 }
+      );
     }
 
-    // 如果存在相同的最近支付（不管状态），返回错误
+    // 如果存在最近1分钟内的pending或completed支付，拒绝创建新订单
     if (recentPayments && recentPayments.length > 0) {
       const latestPayment = recentPayments[0];
       const paymentAge =
         Date.now() - new Date(latestPayment.created_at).getTime();
-      // 如果支付请求在2分钟内，认为是重复请求
-      if (paymentAge < 2 * 60 * 1000) {
-        console.warn(
-          `Duplicate payment detected: ${latestPayment.id} (${paymentAge}ms ago, status: ${latestPayment.status})`
-        );
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Duplicate payment request detected, please try again later",
-            code: "DUPLICATE_PAYMENT_REQUEST",
-            existingPaymentId: latestPayment.id,
-          },
-          { status: 409 }
-        );
-      }
+
+      console.warn(
+        `Duplicate payment request blocked: User ${userId} tried to create payment within ${Math.floor(
+          paymentAge / 1000
+        )}s of existing payment ${latestPayment.id} (status: ${
+          latestPayment.status
+        })`
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "You have a recent payment request. Please wait a moment before trying again.",
+          code: "DUPLICATE_PAYMENT_REQUEST",
+          existingPaymentId: latestPayment.id,
+          waitTime: Math.ceil((60000 - paymentAge) / 1000), // 秒
+        },
+        { status: 429 } // 429 Too Many Requests
+      );
     }
 
     // 验证支付方式是否支持当前区域
