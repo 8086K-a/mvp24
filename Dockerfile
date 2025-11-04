@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # 安装依赖
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # 复制源代码
 COPY . .
@@ -29,7 +29,7 @@ COPY --from=base /app/public ./public
 COPY --from=base /app/next.config.mjs ./
 
 # 安装生产依赖
-RUN npm ci --only=production
+RUN npm ci --only=production --legacy-peer-deps
 
 # 创建非root用户
 RUN addgroup -g 1001 -S nodejs
