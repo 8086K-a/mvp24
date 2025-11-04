@@ -54,6 +54,13 @@ const nextConfig = {
       ...config.experiments,
       asyncWebAssembly: true,
     };
+
+    // Add path mapping for @ alias
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': require('path').resolve(__dirname),
+    };
+
     return config;
   },
 };
