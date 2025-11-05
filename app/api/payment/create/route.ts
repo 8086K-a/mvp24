@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PayPalProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/paypal-provider";
 import { StripeProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/stripe-provider";
+import { AlipayProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/alipay-provider";
 import { paymentRouter } from "@/lib/architecture-modules/layers/third-party/payment/router";
 import { RegionType } from "@/lib/architecture-modules/core/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -205,6 +206,26 @@ async function handlePaymentCreate(request: NextRequest) {
                 paypalError instanceof Error
                   ? paypalError.message
                   : "PayPal initialization failed",
+            },
+            { status: 500 }
+          );
+        }
+      } else if (method === "alipay") {
+        console.log("Initializing Alipay provider...");
+        try {
+          const alipayProvider = new AlipayProvider(process.env);
+          console.log("Alipay provider initialized, creating payment...");
+          result = await alipayProvider.createPayment(order);
+          console.log("Alipay payment result:", result);
+        } catch (alipayError) {
+          console.error("Alipay provider error:", alipayError);
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                alipayError instanceof Error
+                  ? alipayError.message
+                  : "Alipay initialization failed",
             },
             { status: 500 }
           );

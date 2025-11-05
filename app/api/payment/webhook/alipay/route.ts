@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     // 验证支付宝签名
     const isValidSignature = verifyAlipaySignature(
       params,
-      process.env.ALIPAY_PUBLIC_KEY
+      process.env.ALIPAY_ALIPAY_PUBLIC_KEY
     );
 
     if (!isValidSignature) {

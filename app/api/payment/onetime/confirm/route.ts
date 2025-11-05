@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PayPalProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/paypal-provider";
 import { StripeProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/stripe-provider";
+import { AlipayProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/alipay-provider";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAuth, createAuthErrorResponse } from "@/lib/auth";
 import { logInfo, logError, logWarn, logBusinessEvent } from "@/lib/logger";
@@ -112,15 +113,19 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const sessionId = searchParams.get("session_id"); // Stripe
     const token = searchParams.get("token"); // PayPal
+    const outTradeNo = searchParams.get("out_trade_no"); // Alipay
+    const tradeNo = searchParams.get("trade_no"); // Alipay交易号
 
     logInfo("Processing one-time payment confirmation", {
       operationId,
       userId: user.id,
       hasSessionId: !!sessionId,
       hasToken: !!token,
+      hasOutTradeNo: !!outTradeNo,
+      hasTradeNo: !!tradeNo,
     });
 
-    if (!sessionId && !token) {
+    if (!sessionId && !token && !outTradeNo && !tradeNo) {
       logWarn("Missing payment confirmation parameters", {
         operationId,
         userId: user.id,
@@ -164,14 +169,14 @@ export async function GET(request: NextRequest) {
       currency = confirmation.currency;
 
       // 从 pending payment 中获取天数信息
-      const { data: pendingPayment } = await supabaseAdmin
+      const { data: stripePendingPayment } = await supabaseAdmin
         .from("payments")
         .select("metadata")
         .eq("transaction_id", sessionId)
         .eq("status", "pending")
         .maybeSingle();
 
-      days = pendingPayment?.metadata?.days || (amount > 50 ? 365 : 30);
+      days = stripePendingPayment?.metadata?.days || (amount > 50 ? 365 : 30);
     } else if (token) {
       // PayPal 支付确认
       logInfo("Confirming PayPal one-time payment", {
@@ -205,14 +210,14 @@ export async function GET(request: NextRequest) {
         currency = purchaseUnit?.amount?.currency_code || "USD";
 
         // 从 pending payment 中获取天数信息
-        const { data: pendingPayment } = await supabaseAdmin
+        const { data: paypalPendingPayment } = await supabaseAdmin
           .from("payments")
           .select("metadata")
           .eq("transaction_id", token)
           .eq("status", "pending")
           .maybeSingle();
 
-        days = pendingPayment?.metadata?.days || (amount > 50 ? 365 : 30);
+        days = paypalPendingPayment?.metadata?.days || (amount > 50 ? 365 : 30);
       } catch (error) {
         logError("PayPal capture error", error as Error, {
           operationId,
@@ -226,6 +231,80 @@ export async function GET(request: NextRequest) {
               error instanceof Error
                 ? error.message
                 : "Failed to capture PayPal payment",
+          },
+          { status: 500 }
+        );
+      }
+    } else if (outTradeNo || tradeNo) {
+      // Alipay 支付确认 - 对于同步跳转，直接认为支付成功
+      logInfo("Confirming Alipay one-time payment (sync return)", {
+        operationId,
+        userId: user.id,
+        outTradeNo,
+        tradeNo,
+      });
+
+      const alipayProvider = new AlipayProvider(process.env);
+
+      try {
+        // 对于同步跳转（return_url），我们相信支付已经成功
+        // 不需要再次查询支付宝API，因为支付宝只有支付成功才会跳转
+        const actualOutTradeNo = outTradeNo || tradeNo;
+        transactionId = tradeNo || outTradeNo || "";
+
+        // 从URL参数中提取金额信息
+        const totalAmount = searchParams.get("total_amount");
+        if (totalAmount) {
+          amount = parseFloat(totalAmount);
+        }
+        currency = "CNY";
+
+        // 从 pending payment 中获取天数信息
+        const { data: alipayPendingPayment } = await supabaseAdmin
+          .from("payments")
+          .select("metadata")
+          .eq("transaction_id", actualOutTradeNo)
+          .eq("status", "pending")
+          .maybeSingle();
+
+        days =
+          alipayPendingPayment?.metadata?.days || (amount > 300 ? 365 : 30); // CNY pricing
+
+        // 验证支付宝回调签名（可选，在开发环境下跳过）
+        if (process.env.NODE_ENV === "production") {
+          const allParams: Record<string, string> = {};
+          searchParams.forEach((value, key) => {
+            allParams[key] = value;
+          });
+
+          const isValid = await alipayProvider.verifyCallback(allParams);
+          if (!isValid) {
+            logWarn("Alipay callback signature verification failed", {
+              operationId,
+              userId: user.id,
+              outTradeNo,
+              tradeNo,
+            });
+            return NextResponse.json(
+              { success: false, error: "Invalid payment signature" },
+              { status: 400 }
+            );
+          }
+        }
+      } catch (error) {
+        logError("Alipay verification error", error as Error, {
+          operationId,
+          userId: user.id,
+          outTradeNo,
+          tradeNo,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to verify Alipay payment",
           },
           { status: 500 }
         );
@@ -255,7 +334,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 查找 pending 支付记录并更新为 completed
-    const paymentIdToUpdate = sessionId || token;
+    const paymentIdToUpdate = sessionId || token || outTradeNo || tradeNo;
     const { data: pendingPayment, error: findError } = await supabaseAdmin
       .from("payments")
       .select("id, amount, currency") // 获取原始金额和货币
@@ -327,7 +406,7 @@ export async function GET(request: NextRequest) {
         amount,
         currency,
         status: "completed",
-        payment_method: sessionId ? "stripe" : "paypal",
+        payment_method: sessionId ? "stripe" : token ? "paypal" : "alipay",
         transaction_id: transactionId,
       };
 

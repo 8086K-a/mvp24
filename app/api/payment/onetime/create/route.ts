@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PayPalProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/paypal-provider";
 import { StripeProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/stripe-provider";
+import { AlipayProvider } from "@/lib/architecture-modules/layers/third-party/payment/providers/alipay-provider";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAuth, createAuthErrorResponse } from "@/lib/auth";
 import { paymentRateLimit } from "@/lib/rate-limit";
@@ -75,8 +76,18 @@ async function handleOnetimePaymentCreate(request: NextRequest) {
     }
 
     // 确定金额和天数
-    const amount = billingCycle === "monthly" ? 9.99 : 99.99;
-    const currency = "USD";
+    // 支付宝使用人民币，其他使用美元
+    const currency = method === "alipay" ? "CNY" : "USD";
+    let amount: number;
+
+    if (currency === "CNY") {
+      // 人民币定价：约 7:1 汇率
+      amount = billingCycle === "monthly" ? 30 : 300;
+    } else {
+      // 美元定价
+      amount = billingCycle === "monthly" ? 9.99 : 99.99;
+    }
+
     const days = billingCycle === "monthly" ? 30 : 365;
 
     // 检查最近1分钟内是否有相同的pending或completed支付(防止重复点击)
@@ -173,6 +184,15 @@ async function handleOnetimePaymentCreate(request: NextRequest) {
         const paypalProvider = new PayPalProvider(process.env);
         // PayPal 一次性支付(使用 order 而不是 subscription)
         result = await paypalProvider.createOnetimePayment(order);
+      } else if (method === "alipay") {
+        logInfo("Creating Alipay one-time payment", {
+          operationId,
+          userId: user.id,
+          amount,
+        });
+        const alipayProvider = new AlipayProvider(process.env);
+        // 支付宝一次性支付
+        result = await alipayProvider.createPayment(order);
       } else {
         return NextResponse.json(
           { success: false, error: `Unsupported payment method: ${method}` },

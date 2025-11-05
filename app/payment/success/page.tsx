@@ -32,14 +32,19 @@ function PaymentSuccessContent() {
         // 🔄 一次性支付使用不同的参数
         const sessionId = searchParams.get("session_id"); // Stripe
         const token = searchParams.get("token"); // PayPal
+        const outTradeNo = searchParams.get("out_trade_no"); // Alipay
+        const tradeNo = searchParams.get("trade_no"); // Alipay交易号
 
         console.log("Payment success callback:", {
           sessionId,
           token,
+          outTradeNo,
+          tradeNo,
+          allParams: Object.fromEntries(searchParams.entries()),
         });
 
-        // 一次性支付:两个参数至少要有一个
-        if (!sessionId && !token) {
+        // 一次性支付:三个参数至少要有一个
+        if (!sessionId && !token && !outTradeNo && !tradeNo) {
           throw new Error("Missing payment confirmation parameters");
         }
 
@@ -47,6 +52,8 @@ function PaymentSuccessContent() {
         const params = new URLSearchParams();
         if (sessionId) params.set("session_id", sessionId);
         if (token) params.set("token", token);
+        if (outTradeNo) params.set("out_trade_no", outTradeNo);
+        if (tradeNo) params.set("trade_no", tradeNo);
 
         // 获取认证 token
         const { createClient } = await import("@supabase/supabase-js");

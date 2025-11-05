@@ -160,32 +160,30 @@ export default function PaymentPage() {
     planId: string,
     billingCycle: "monthly" | "yearly"
   ) => {
-    // 基础价格（USD）
-    const basePrices = {
-      free: {
-        amount: 0,
-        description: language === "zh" ? "免费版" : "Free Plan",
-      },
-      pro: {
-        amount: billingCycle === "monthly" ? 9.99 : 99.99,
-        description:
-          language === "zh"
-            ? `专业版 - ${billingCycle === "monthly" ? "月付" : "年付"}`
-            : `Pro Plan - ${billingCycle === "monthly" ? "Monthly" : "Yearly"}`,
-      },
-    };
+    // 根据货币类型确定价格
+    let amount: number;
 
-    const plan = basePrices[planId as keyof typeof basePrices];
-    if (plan) {
-      setSelectedPlan({
-        planId,
-        billingCycle,
-        amount: convertPrice(plan.amount, currency),
-        currency,
-        description: plan.description,
-      });
-      setPaymentResult(null);
+    if (currency === "CNY") {
+      // 人民币定价
+      amount = billingCycle === "monthly" ? 30 : 300;
+    } else {
+      // 美元定价
+      amount = billingCycle === "monthly" ? 9.99 : 99.99;
     }
+
+    const description =
+      language === "zh"
+        ? `专业版 - ${billingCycle === "monthly" ? "月付" : "年付"}`
+        : `Pro Plan - ${billingCycle === "monthly" ? "Monthly" : "Yearly"}`;
+
+    setSelectedPlan({
+      planId,
+      billingCycle,
+      amount,
+      currency,
+      description,
+    });
+    setPaymentResult(null);
   };
 
   const handlePaymentSuccess = (result: any) => {
@@ -193,7 +191,27 @@ export default function PaymentPage() {
 
     // 如果有支付URL，重定向到支付页面
     if (result.paymentUrl) {
-      window.location.href = result.paymentUrl;
+      // 检查是否是HTML表单 (支付宝返回的是HTML)
+      if (
+        typeof result.paymentUrl === "string" &&
+        result.paymentUrl.includes("<form")
+      ) {
+        console.log("Redirecting to Alipay payment page...");
+
+        // 支付宝：跳转到专门的支付重定向页面（绕过CSP限制）
+        // 将表单HTML进行base64编码后作为URL参数传递
+        const encodedForm = btoa(result.paymentUrl);
+        const redirectUrl = `/payment/redirect?form=${encodeURIComponent(
+          encodedForm
+        )}`;
+
+        console.log("Redirect URL created");
+        window.location.href = redirectUrl;
+      } else {
+        // 其他支付方式返回的是URL，直接跳转
+        console.log("Redirecting to payment URL:", result.paymentUrl);
+        window.location.href = result.paymentUrl;
+      }
     }
   };
 

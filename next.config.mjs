@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,7 +26,7 @@ const nextConfig = {
       frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://www.paypal.com;
       object-src 'none';
       base-uri 'self';
-      form-action 'self' https://www.paypal.com;
+      form-action 'self' https://www.paypal.com https://openapi.alipay.com https://*.alipaydev.com;
       frame-ancestors 'self';
     `
       .replace(/\s{2,}/g, " ")
@@ -52,6 +52,36 @@ const nextConfig = {
         source: "/:path*",
         headers: securityHeaders,
       },
+      {
+        // 支付重定向页面：允许向支付宝提交表单
+        source: "/payment/redirect",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
+            key: "Content-Security-Policy",
+            // 对于支付重定向页面，允许向任何 HTTPS 地址提交表单
+            value: `
+              default-src 'self';
+              script-src 'self' 'unsafe-eval' 'unsafe-inline';
+              style-src 'self' 'unsafe-inline';
+              form-action https:;
+              frame-ancestors 'self';
+            `
+              .replace(/\s{2,}/g, " ")
+              .trim(),
+          },
+        ],
+      },
     ];
   },
   webpack: (config) => {
@@ -63,7 +93,7 @@ const nextConfig = {
     // Add path mapping for @ alias
     config.resolve.alias = {
       ...config.resolve.alias,
-      '@': path.resolve(__dirname, '.'),
+      "@": path.resolve(__dirname, "."),
     };
 
     return config;

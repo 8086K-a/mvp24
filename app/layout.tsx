@@ -6,6 +6,7 @@ import { UserProvider } from "@/components/user-context";
 import { LanguageProvider } from "@/components/language-provider";
 import { GeoProvider } from "@/components/geo-provider";
 import { Toaster } from "@/components/ui/toaster";
+import { DebugModeIndicator } from "@/components/debug-mode-indicator";
 import { initSentry } from "@/lib/sentry";
 import "@/lib/startup-checks"; // 启动安全检查
 
@@ -35,6 +36,8 @@ export default function RootLayout({
             <AppProvider>
               <UserProvider>
                 {children}
+                {/* Debug mode indicator - 仅开发环境显示 */}
+                <DebugModeIndicator />
                 {/* Global toast portal */}
                 <Toaster />
               </UserProvider>
