@@ -81,15 +81,24 @@ export function performStartupSecurityChecks(): void {
   console.log("🎉 Security checks completed successfully");
 }
 
-// 在开发环境中运行检查
-if (process.env.NODE_ENV !== "test") {
-  try {
-    performStartupSecurityChecks();
-  } catch (error) {
-    console.error("🚨 Startup security check failed:", error);
-    // 在生产环境中，安全检查失败应该阻止启动
-    if (process.env.NODE_ENV === "production") {
-      process.exit(1);
+// 懒加载：延迟执行安全检查，避免在构建时阻塞
+// 使用 Promise.then 确保在事件循环的下一个微任务中执行
+let securityChecksPerformed = false;
+
+if (typeof window === "undefined" && process.env.NODE_ENV !== "test") {
+  // 仅在服务器端且非测试环境
+  Promise.resolve().then(() => {
+    if (!securityChecksPerformed) {
+      securityChecksPerformed = true;
+      try {
+        performStartupSecurityChecks();
+      } catch (error) {
+        console.error("🚨 Startup security check failed:", error);
+        // 在生产环境中，安全检查失败应该阻止启动
+        if (process.env.NODE_ENV === "production") {
+          process.exit(1);
+        }
+      }
     }
-  }
+  });
 }
