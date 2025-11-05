@@ -1,9 +1,5 @@
 # 使用多阶段构建优化镜像大小
-<<<<<<< HEAD
 FROM node:20-alpine AS base
-=======
-FROM node:18-alpine AS base
->>>>>>> f063e71cf18ce9676638b9bf9e165417bedb07c6
 
 # 安装pnpm
 RUN npm install -g pnpm
@@ -27,11 +23,7 @@ COPY . .
 RUN pnpm build
 
 # 生产阶段
-<<<<<<< HEAD
 FROM node:20-alpine AS production
-=======
-FROM node:18-alpine AS production
->>>>>>> f063e71cf18ce9676638b9bf9e165417bedb07c6
 
 # 安装pnpm
 RUN npm install -g pnpm
