@@ -1,10 +1,18 @@
 // lib/logger.ts - 统一的日志系统
 // 在生产环境和Edge Runtime中总是使用简单的console logger
+
+// 更严格的Edge Runtime检测
 const isEdgeRuntime =
-  process.env.NODE_ENV === "production" ||
-  (typeof window === "undefined" &&
-    typeof process !== "undefined" &&
-    process.env.LAMBDA_TASK_ROOT);
+  // Vercel Edge Runtime
+  (typeof process !== "undefined" && process.env.LAMBDA_TASK_ROOT) ||
+  // Next.js Edge Runtime (检查是否在Edge环境中)
+  (typeof globalThis !== "undefined" &&
+    typeof window === "undefined" &&
+    typeof process === "undefined") ||
+  // 生产环境且在受限环境中
+  (process.env.NODE_ENV === "production" &&
+    typeof window === "undefined" &&
+    typeof require === "undefined");
 
 // 简单的Edge Runtime兼容logger
 class EdgeLogger {
@@ -35,14 +43,14 @@ class EdgeLogger {
   }
 }
 
-// 创建logger实例 - 在生产环境和Edge Runtime中直接使用EdgeLogger
+// 创建logger实例 - 在Edge Runtime中直接使用EdgeLogger
 export const logger = isEdgeRuntime
   ? new EdgeLogger()
   : (() => {
-      // 在开发环境的Node.js中，使用winston
+      // 在Node.js环境中，延迟加载winston
       try {
-        // 使用动态导入语法，但为了兼容性，我们使用条件require
-        if (typeof require === "function") {
+        // 只有在Node.js环境中才加载winston
+        if (typeof require === "function" && typeof process !== "undefined" && process.cwd) {
           const winston = require("winston");
           const DailyRotateFile = require("winston-daily-rotate-file");
           const path = require("path");
@@ -164,13 +172,14 @@ export const logger = isEdgeRuntime
             ],
           });
         } else {
-          // 如果没有require函数，使用EdgeLogger
+          // 如果没有完整的Node.js环境，使用EdgeLogger
           return new EdgeLogger();
         }
       } catch (error) {
         // 如果winston加载失败，使用EdgeLogger
         console.warn(
-          "Failed to load winston logger, falling back to console logger"
+          "Failed to load winston logger, falling back to console logger",
+          error
         );
         return new EdgeLogger();
       }
