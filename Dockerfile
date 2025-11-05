@@ -1,6 +1,9 @@
 # 使用多阶段构建优化镜像大小
 FROM node:18-alpine AS base
 
+# 安装pnpm
+RUN npm install -g pnpm
+
 # 设置工作目录
 WORKDIR /app
 
@@ -21,31 +24,34 @@ ENV AI_GATEWAY_API_KEY=$AI_GATEWAY_API_KEY
 ENV NODE_ENV=production
 
 # 复制包管理文件
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # 安装依赖
-RUN npm ci --legacy-peer-deps
+RUN pnpm install --frozen-lockfile
 
 # 复制源代码
 COPY . .
 
 # 构建应用
-RUN npm run build
+RUN pnpm build
 
 # 生产阶段
 FROM node:18-alpine AS production
+
+# 安装pnpm
+RUN npm install -g pnpm
 
 # 设置工作目录
 WORKDIR /app
 
 # 从构建阶段复制必要的文件
-COPY --from=base /app/package.json /app/package-lock.json ./
+COPY --from=base /app/package.json /app/pnpm-lock.yaml ./
 COPY --from=base /app/.next ./.next
 COPY --from=base /app/public ./public
 COPY --from=base /app/next.config.mjs ./
 
 # 安装生产依赖
-RUN npm ci --only=production --legacy-peer-deps
+RUN pnpm install --frozen-lockfile --prod
 
 # 创建非root用户
 RUN addgroup -g 1001 -S nodejs
@@ -63,4 +69,4 @@ ENV PORT=3000
 ENV NODE_ENV=production
 
 # 启动应用
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]
