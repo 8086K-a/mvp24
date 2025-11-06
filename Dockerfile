@@ -8,7 +8,7 @@ RUN npm install -g pnpm
 WORKDIR /app
 
 # 注意：环境变量将在腾讯云托管运行时设置，不需要在构建时设置
-ENV NODE_ENV=production
+# 构建时使用 development，运行时由 Tencent Cloud 的环境变量覆盖
 
 # 复制包管理文件
 COPY package.json pnpm-lock.yaml ./
@@ -51,9 +51,8 @@ USER nextjs
 # 暴露端口
 EXPOSE 3000
 
-# 设置环境变量
+# 设置端口（NODE_ENV 应由运行时环境设置，通常由 Tencent Cloud 提供）
 ENV PORT=3000
-ENV NODE_ENV=production
 
 # 启动应用
 CMD ["pnpm", "start"]

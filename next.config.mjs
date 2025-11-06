@@ -18,13 +18,6 @@ const nextConfig = {
   generateBuildId: async () => {
     return "build-" + Date.now();
   },
-  // 云平台端口配置
-  serverRuntimeConfig: {
-    port: process.env.PORT || 80,
-  },
-  publicRuntimeConfig: {
-    port: process.env.PORT || 80,
-  },
   async headers() {
     // Security headers applied to all routes
     const ContentSecurityPolicy = `
