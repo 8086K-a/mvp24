@@ -1,0 +1,39 @@
+{
+  "version": "2.0",
+  "envId": "multigpt-197343-5-1385410663",
+  "framework": {
+    "name": "nextjs",
+    "type": "SSR"
+  },
+  "functions": {
+    "app": {
+      "runtime": "Nodejs18.17.0",
+      "entry": "app/index.js",
+      "path": "/",
+      "installDependency": true,
+      "ignoreFiles": [
+        ".git",
+        ".github",
+        "node_modules",
+        ".next",
+        "README.md",
+        "*.md",
+        "tests/",
+        "scripts/",
+        ".env*"
+      ]
+    }
+  },
+  "static": {
+    "path": "out",
+    "ignoreFiles": [
+      ".git",
+      ".github",
+      "node_modules",
+      "src",
+      "*.md",
+      "tests/",
+      "scripts/"
+    ]
+  }
+}
