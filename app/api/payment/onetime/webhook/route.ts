@@ -650,6 +650,14 @@ async function handlePayPalWebhook(
       // 从 supplementary_data 获取 order_id
       const orderId = resource.supplementary_data?.related_ids?.order_id || captureId;
 
+      logInfo("PayPal CAPTURE event IDs", {
+        operationId,
+        captureId,
+        orderId,
+        hasSupplementaryData: !!resource.supplementary_data,
+        relatedIds: resource.supplementary_data?.related_ids,
+      });
+
       // 从 custom_id 获取用户ID
       const userId = resource.custom_id;
 
@@ -670,32 +678,63 @@ async function handlePayPalWebhook(
       // 注意: orderId 是 CHECKOUT.ORDER.APPROVED 时创建的订单ID
       // captureId 是 PAYMENT.CAPTURE.COMPLETED 时的捕获ID
       // 我们需要通过 orderId 查找之前创建的payment记录
+      // 🔧 修复: 如果orderId查不到,尝试用captureId查找(因为confirm API可能已经更新了transaction_id)
       let days = 30; // 默认值
+      let paymentRecord: any = null;
+
       try {
-        const { data: paymentRecord } = await supabaseAdmin
+        // 首先尝试通过orderId查找
+        const { data: recordByOrderId } = await supabaseAdmin
           .from("payments")
-          .select("metadata, billing_cycle, id")
+          .select("metadata, billing_cycle, id, transaction_id")
           .eq("transaction_id", orderId)
           .maybeSingle();
+
+        if (recordByOrderId) {
+          paymentRecord = recordByOrderId;
+          logInfo("PayPal: found payment by orderId", {
+            orderId,
+            paymentId: recordByOrderId.id,
+          });
+        } else {
+          // 如果找不到,尝试通过captureId查找(可能confirm API已经更新了transaction_id)
+          const { data: recordByCaptureId } = await supabaseAdmin
+            .from("payments")
+            .select("metadata, billing_cycle, id, transaction_id")
+            .eq("transaction_id", captureId)
+            .maybeSingle();
+
+          if (recordByCaptureId) {
+            paymentRecord = recordByCaptureId;
+            logInfo("PayPal: found payment by captureId", {
+              captureId,
+              paymentId: recordByCaptureId.id,
+            });
+          }
+        }
 
         if (paymentRecord) {
           // 优先从 metadata.days 读取，其次从 billing_cycle 计算
           days = paymentRecord.metadata?.days || (paymentRecord.billing_cycle === "yearly" ? 365 : 30);
           logInfo("PayPal: days from payment record", {
             orderId,
+            captureId,
             days,
             billingCycle: paymentRecord.billing_cycle,
             metadataDays: paymentRecord.metadata?.days,
+            transactionId: paymentRecord.transaction_id,
           });
         } else {
-          logWarn("PayPal: payment record not found, using default days", {
+          logWarn("PayPal: payment record not found by orderId or captureId, using default days", {
             orderId,
+            captureId,
             defaultDays: days,
           });
         }
       } catch (err) {
         logWarn("PayPal: error reading payment record", {
           orderId,
+          captureId,
           error: err,
           defaultDays: days,
         });
@@ -711,12 +750,40 @@ async function handlePayPalWebhook(
       });
 
       // 1️⃣ 查找或创建支付记录
-      const { data: existingPayment, error: findPaymentError } =
-        await supabaseAdmin
+      // 🔧 关键修复: 同时尝试用orderId和captureId查找,因为confirm API可能已经更新了transaction_id
+      let existingPayment: any = null;
+
+      // 首先尝试通过orderId查找
+      const { data: paymentByOrderId } = await supabaseAdmin
+        .from("payments")
+        .select("id, status, subscription_id")
+        .eq("transaction_id", orderId)
+        .maybeSingle();
+
+      if (paymentByOrderId) {
+        existingPayment = paymentByOrderId;
+        logInfo("Found existing payment by orderId", {
+          operationId,
+          paymentId: paymentByOrderId.id,
+          orderId,
+        });
+      } else {
+        // 如果找不到,尝试通过captureId查找
+        const { data: paymentByCaptureId } = await supabaseAdmin
           .from("payments")
           .select("id, status, subscription_id")
-          .eq("transaction_id", orderId)
+          .eq("transaction_id", captureId)
           .maybeSingle();
+
+        if (paymentByCaptureId) {
+          existingPayment = paymentByCaptureId;
+          logInfo("Found existing payment by captureId", {
+            operationId,
+            paymentId: paymentByCaptureId.id,
+            captureId,
+          });
+        }
+      }
 
       let paymentId = existingPayment?.id;
       let subscriptionId = existingPayment?.subscription_id;

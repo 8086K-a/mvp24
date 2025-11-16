@@ -549,7 +549,11 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        transactionId = captureResult.id;
+        // ✅ 关键修复: transactionId应该使用Capture ID,但查找pending payment时要用Order ID (token)
+        // Order ID: 72C40158BX438952W (CREATE API创建pending payment时用的ID)
+        // Capture ID: 83P92523MR1516802 (capture后的ID,用于最终的transaction_id)
+        const captureId = captureResult.id;
+        transactionId = captureId;
 
         // 🔑 关键修复：从 payment_source 和 purchase_units 中提取金额
         // PayPal API 可能返回不同的结构，需要多层备份方案
