@@ -2204,7 +2204,7 @@ export class WebhookHandler {
       });
 
       // 检查是否已有活跃订阅
-      const { data: existingSubscription, error: checkError } =
+      const { data: existingSubscriptionData, error: checkError } =
         await supabaseAdmin
           .from("subscriptions")
           .select("*")
@@ -2221,6 +2221,7 @@ export class WebhookHandler {
         return false;
       }
 
+      let existingSubscription = existingSubscriptionData;
       let subscription;
 
       if (existingSubscription) {
@@ -2341,6 +2342,73 @@ export class WebhookHandler {
           subscriptionId,
           provider,
         });
+
+        // 🔧 防止重复订阅：最后检查是否存在任何活跃订阅（再查一遍）
+        // 这是一个双重检查机制，防止竞态条件导致的重复订阅
+        const { data: doubleCheckSubs, error: doubleCheckError } =
+          await supabaseAdmin
+            .from("subscriptions")
+            .select("id, status, current_period_end")
+            .eq("user_id", userId)
+            .eq("status", "active")
+            .limit(1);
+
+        if (doubleCheckSubs && doubleCheckSubs.length > 0) {
+          logWarn(
+            "Found active subscription during double check, updating instead of creating",
+            {
+              operationId,
+              userId,
+              foundSubscriptionId: doubleCheckSubs[0].id,
+              newSubscriptionId: subscriptionId,
+            }
+          );
+          // 转而更新现有订阅
+          existingSubscription = doubleCheckSubs[0] as any;
+          // 重新执行更新逻辑
+          if (existingSubscription) {
+            const daysNum =
+              typeof days === "string" ? parseInt(days, 10) : days || 30;
+            const existingEnd = new Date(existingSubscription.current_period_end);
+            let newPeriodEnd: string;
+
+            if (provider === "paypal" && existingEnd > now) {
+              newPeriodEnd = new Date(
+                existingEnd.getTime() + daysNum * 24 * 60 * 60 * 1000
+              ).toISOString();
+            } else {
+              newPeriodEnd = new Date(
+                now.getTime() + daysNum * 24 * 60 * 60 * 1000
+              ).toISOString();
+            }
+
+            const { error: updateError } = await supabaseAdmin
+              .from("subscriptions")
+              .update({
+                provider_subscription_id: subscriptionId,
+                current_period_end: newPeriodEnd,
+                updated_at: now.toISOString(),
+              })
+              .eq("id", existingSubscription.id);
+
+            if (updateError) {
+              logError("Failed to update subscription during double check", updateError, {
+                operationId,
+                userId,
+                subscriptionId: existingSubscription.id,
+              });
+              return false;
+            }
+
+            logInfo("Subscription updated successfully via double check", {
+              operationId,
+              userId,
+              subscriptionId: existingSubscription.id,
+              newPeriodEnd,
+            });
+            return true;
+          }
+        }
 
         // ✅ 修复：使用从payments表读取的天数，而不是硬编码30天
         // ✅ 修复：确保days是数字（从metadata读取可能是字符串）
