@@ -667,11 +667,14 @@ async function handlePayPalWebhook(
       const currency = resource.amount?.currency_code || "USD";
 
       // ✅ 修复：从 payments 表读取 days，而不是从金额推断
+      // 注意: orderId 是 CHECKOUT.ORDER.APPROVED 时创建的订单ID
+      // captureId 是 PAYMENT.CAPTURE.COMPLETED 时的捕获ID
+      // 我们需要通过 orderId 查找之前创建的payment记录
       let days = 30; // 默认值
       try {
         const { data: paymentRecord } = await supabaseAdmin
           .from("payments")
-          .select("metadata, billing_cycle")
+          .select("metadata, billing_cycle, id")
           .eq("transaction_id", orderId)
           .maybeSingle();
 
@@ -718,9 +721,30 @@ async function handlePayPalWebhook(
       let paymentId = existingPayment?.id;
       let subscriptionId = existingPayment?.subscription_id;
 
+      // ✅ 关键修复: 如果payment已经是completed状态,说明已经处理过,直接返回成功
+      if (existingPayment && existingPayment.status === "completed") {
+        logInfo("Payment already processed (completed status), skipping duplicate webhook", {
+          operationId,
+          paymentId: existingPayment.id,
+          orderId,
+          transactionId: orderId,
+        });
+
+        // 标记webhook为已处理
+        await supabaseAdmin
+          .from("webhook_events")
+          .update({
+            processed: true,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", `paypal_${body.id}`);
+
+        return NextResponse.json({ received: true });
+      }
+
       if (existingPayment && existingPayment.status !== "completed") {
         // 更新现有支付记录为已完成
-        logInfo("Updating existing payment record", {
+        logInfo("Updating existing payment record to completed", {
           operationId,
           paymentId: existingPayment.id,
           oldStatus: existingPayment.status,
