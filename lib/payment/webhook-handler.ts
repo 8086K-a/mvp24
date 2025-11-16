@@ -2369,7 +2369,9 @@ export class WebhookHandler {
           if (existingSubscription) {
             const daysNum =
               typeof days === "string" ? parseInt(days, 10) : days || 30;
-            const existingEnd = new Date(existingSubscription.current_period_end);
+            const existingEnd = new Date(
+              existingSubscription.current_period_end
+            );
             let newPeriodEnd: string;
 
             if (provider === "paypal" && existingEnd > now) {
@@ -2392,11 +2394,15 @@ export class WebhookHandler {
               .eq("id", existingSubscription.id);
 
             if (updateError) {
-              logError("Failed to update subscription during double check", updateError, {
-                operationId,
-                userId,
-                subscriptionId: existingSubscription.id,
-              });
+              logError(
+                "Failed to update subscription during double check",
+                updateError,
+                {
+                  operationId,
+                  userId,
+                  subscriptionId: existingSubscription.id,
+                }
+              );
               return false;
             }
 
