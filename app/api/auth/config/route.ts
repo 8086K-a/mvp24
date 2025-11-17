@@ -23,11 +23,11 @@ function getAuthConfig() {
 
   // 延迟到运行时才读取环境变量
   cachedConfig = {
-    wechatAppId: process.env.NEXT_PUBLIC_WECHAT_APP_ID || process.env.WECHAT_APP_ID,
-    appUrl: process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL,
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
-    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
-    wechatCloudbaseId: process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID || process.env.WECHAT_CLOUDBASE_ID,
+    wechatAppId: process.env.NEXT_PUBLIC_WECHAT_APP_ID,
+    appUrl: process.env.NEXT_PUBLIC_APP_URL,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    wechatCloudbaseId: process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID,
   };
 
   return cachedConfig;

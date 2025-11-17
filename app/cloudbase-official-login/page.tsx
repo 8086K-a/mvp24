@@ -16,6 +16,7 @@ export default function OfficialCloudBaseLogin() {
   const [password, setPassword] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
   const [wechatAppId, setWechatAppId] = useState<string>("");
+  const [wechatCloudbaseId, setWechatCloudbaseId] = useState<string>("");
 
   // 从服务端API获取运行时配置
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function OfficialCloudBaseLogin() {
         if (response.ok) {
           const data = await response.json();
           setWechatAppId(data.config?.wechatAppId || "");
+          setWechatCloudbaseId(data.config?.wechatCloudbaseId || "");
         }
       } catch (error) {
         console.error("Failed to fetch runtime config:", error);
@@ -41,11 +43,10 @@ export default function OfficialCloudBaseLogin() {
         // 动态导入 CloudBase JS SDK
         const cloudbase = await import("@cloudbase/js-sdk");
 
-        // 初始化 SDK
+        // 初始化 SDK（使用从API获取的配置或后备值）
         const app = cloudbase.default.init({
           env:
-            process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID ||
-            "multigpt-6g9pqxiz52974a7c",
+            wechatCloudbaseId || "multigpt-6g9pqxiz52974a7c",
         });
 
         // 挂载到 window 对象（可选）
