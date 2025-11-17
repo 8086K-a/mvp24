@@ -26,6 +26,10 @@ import { isChinaDeployment } from "@/lib/config/deployment.config";
 const authClient = getAuthClient();
 
 function AuthPageContent() {
+  // 直接从环境变量读取配置（在构建时嵌入）
+  const wechatAppId = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_WECHAT_APP_ID as string) : "";
+  const appUrl = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_APP_URL as string) : "";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -392,18 +396,7 @@ function AuthPageContent() {
     setError("");
 
     try {
-      // 从服务端 API 获取环境变量配置
-      // 这样可以确保云平台上的环境变量被正确使用
-      const configResponse = await fetch("/api/auth/config");
-      if (!configResponse.ok) {
-        setError("无法获取认证配置");
-        setLoading(false);
-        return;
-      }
-
-      const configData = await configResponse.json();
-      const wechatAppId = configData.config?.wechatAppId;
-      const appUrl = configData.config?.appUrl;
+      // 直接使用环境变量中的配置
 
       if (!wechatAppId) {
         setError("微信应用 ID 未配置");

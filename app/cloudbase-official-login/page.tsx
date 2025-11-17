@@ -18,22 +18,12 @@ export default function OfficialCloudBaseLogin() {
   const [wechatAppId, setWechatAppId] = useState<string>("");
   const [wechatCloudbaseId, setWechatCloudbaseId] = useState<string>("");
 
-  // 从服务端API获取运行时配置
+  // 直接使用环境变量（在构建时被嵌入）
   useEffect(() => {
-    const fetchRuntimeConfig = async () => {
-      try {
-        const response = await fetch("/api/auth/config");
-        if (response.ok) {
-          const data = await response.json();
-          setWechatAppId(data.config?.wechatAppId || "");
-          setWechatCloudbaseId(data.config?.wechatCloudbaseId || "");
-        }
-      } catch (error) {
-        console.error("Failed to fetch runtime config:", error);
-      }
-    };
-
-    fetchRuntimeConfig();
+    const wechatAppIdValue = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WECHAT_APP_ID : undefined;
+    const wechatCloudbaseIdValue = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID : undefined;
+    setWechatAppId(wechatAppIdValue || "");
+    setWechatCloudbaseId(wechatCloudbaseIdValue || "");
   }, []);
 
   // 初始化 CloudBase SDK
