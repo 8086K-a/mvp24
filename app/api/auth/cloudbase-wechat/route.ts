@@ -230,12 +230,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 在运行时读取环境变量（而不是编译时），确保云平台能正确注入
+    // 服务端读取：这些变量在编译时被嵌入到 API 路由代码中
+    // 客户端需要这些变量时必须调用这个 API 获取
     const wechatAppId = process.env.NEXT_PUBLIC_WECHAT_APP_ID;
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.APP_URL ||
-      "http://localhost:3000";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
     const redirectUri = `${appUrl}/auth/callback`;
 
     if (!wechatAppId) {

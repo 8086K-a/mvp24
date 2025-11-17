@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
 
 /**
  * 腾讯云 CloudBase 官方登录示例页面
@@ -15,16 +16,11 @@ export default function OfficialCloudBaseLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
-  const [wechatAppId, setWechatAppId] = useState<string>("");
-  const [wechatCloudbaseId, setWechatCloudbaseId] = useState<string>("");
 
-  // 直接使用环境变量（在构建时被嵌入）
-  useEffect(() => {
-    const wechatAppIdValue = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WECHAT_APP_ID : undefined;
-    const wechatCloudbaseIdValue = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WECHAT_CLOUDBASE_ID : undefined;
-    setWechatAppId(wechatAppIdValue || "");
-    setWechatCloudbaseId(wechatCloudbaseIdValue || "");
-  }, []);
+  // 从API端点读取配置
+  const { config } = useAuthConfig();
+  const wechatAppId = config.wechatAppId || "";
+  const wechatCloudbaseId = config.wechatCloudbaseId || "";
 
   // 初始化 CloudBase SDK
   useEffect(() => {

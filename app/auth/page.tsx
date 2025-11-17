@@ -22,13 +22,15 @@ import { useLanguage } from "@/components/language-provider";
 import { useTranslations } from "@/lib/i18n";
 import { getWechatLoginUrl } from "@/lib/wechat/oauth";
 import { isChinaDeployment } from "@/lib/config/deployment.config";
+import { useAuthConfig } from "@/lib/hooks/useAuthConfig";
 
 const authClient = getAuthClient();
 
 function AuthPageContent() {
-  // 直接从环境变量读取配置（在构建时嵌入）
-  const wechatAppId = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_WECHAT_APP_ID as string) : "";
-  const appUrl = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_APP_URL as string) : "";
+  // 从API端点读取配置
+  const { config, loading: configLoading } = useAuthConfig();
+  const wechatAppId = config.wechatAppId || "";
+  const appUrl = config.appUrl || "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

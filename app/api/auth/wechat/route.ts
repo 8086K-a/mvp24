@@ -277,7 +277,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 在运行时读取环境变量（而不是编译时）
+    // 服务端读取：这个变量在编译时被嵌入到 API 路由代码中
     const appId = process.env.NEXT_PUBLIC_WECHAT_APP_ID;
 
     // 返回微信登录配置
