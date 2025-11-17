@@ -466,10 +466,18 @@ export class WebhookHandler {
       let days = 0; // ✅ 从payments表读取，不再硬编码推断
 
       // 根据提供商提取数据
+      let paypalOrderId = ""; // ✅ 新增:用于查找pending payment的Order ID
+
       switch (provider) {
         case "paypal":
           // PayPal 不同事件类型的数据结构不同
           subscriptionId = data.billing_agreement_id || data.id;
+
+          // ✅ 提取Order ID (用于查找pending payment)
+          // PAYMENT.CAPTURE.COMPLETED事件中,supplementary_data包含order_id
+          if (data.supplementary_data?.related_ids?.order_id) {
+            paypalOrderId = data.supplementary_data.related_ids.order_id;
+          }
 
           // 记录 PayPal 数据以便调试
           logInfo("PayPal payment success data", {
@@ -820,7 +828,8 @@ export class WebhookHandler {
         provider,
         amount > 0 ? amount : undefined,
         amount > 0 ? currency : undefined,
-        days // ✅ 传递从数据库读取的天数
+        days, // ✅ 传递从数据库读取的天数
+        paypalOrderId // ✅ 传递PayPal Order ID
       );
 
       if (success) {
@@ -1090,7 +1099,8 @@ export class WebhookHandler {
     provider: string,
     amount?: number,
     currency?: string,
-    days?: number // ✅ 新增：订阅天数
+    days?: number, // ✅ 新增：订阅天数
+    paypalOrderId?: string // ✅ 新增：PayPal Order ID (用于查找pending payment)
   ): Promise<boolean> {
     console.log("💎💎💎 [WebhookHandler updateSubscriptionStatus] CALLED", {
       userId,
@@ -1143,6 +1153,7 @@ export class WebhookHandler {
           amount,
           currency,
           days, // ✅ 新增：传递天数
+          paypalOrderId, // ✅ 新增：传递PayPal Order ID
           operationId,
           now
         );
@@ -2146,6 +2157,7 @@ export class WebhookHandler {
     amount: number | undefined,
     currency: string | undefined,
     days: number | undefined, // ✅ 新增：订阅天数
+    paypalOrderId: string | undefined, // ✅ 新增：PayPal Order ID
     operationId: string,
     now: Date
   ): Promise<boolean> {
@@ -2571,7 +2583,8 @@ export class WebhookHandler {
 
         // 智能查找现有pending支付记录
         // 1. 首先尝试通过subscriptionId匹配（用于定期支付）
-        // 2. 如果没找到，尝试通过用户ID+金额+时间匹配（用于一次性支付）
+        // 2. 对于PayPal,尝试通过Order ID查找（因为CREATE用的是Order ID）
+        // 3. 如果没找到，尝试通过用户ID+金额+时间匹配（用于一次性支付）
         let existingPayment = null;
 
         // 首先通过transaction_id查找（适用于定期支付）
@@ -2601,6 +2614,38 @@ export class WebhookHandler {
             paymentId: existingPayment.id,
             transactionId: subscriptionId,
           });
+        }
+
+        // ✅ 关键修复:对于PayPal,如果通过Capture ID找不到,尝试用Order ID查找
+        if (!existingPayment && provider === "paypal" && paypalOrderId) {
+          const { data: paymentByOrderId, error: checkOrderError } =
+            await supabaseAdmin
+              .from("payments")
+              .select("id, status, created_at")
+              .eq("transaction_id", paypalOrderId)
+              .eq("status", "pending")
+              .maybeSingle();
+
+          if (checkOrderError) {
+            logError(
+              "Error checking existing payment by PayPal Order ID",
+              checkOrderError,
+              {
+                operationId,
+                userId,
+                orderId: paypalOrderId,
+                captureId: subscriptionId,
+              }
+            );
+          } else if (paymentByOrderId) {
+            existingPayment = paymentByOrderId;
+            logInfo("Found existing payment by PayPal Order ID", {
+              operationId,
+              paymentId: existingPayment.id,
+              orderId: paypalOrderId,
+              captureId: subscriptionId,
+            });
+          }
         }
 
         // 如果没找到，通过用户+金额+时间匹配（适用于一次性支付）
