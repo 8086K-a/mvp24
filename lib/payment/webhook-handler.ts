@@ -2617,13 +2617,14 @@ export class WebhookHandler {
         }
 
         // ✅ 关键修复:对于PayPal,如果通过Capture ID找不到,尝试用Order ID查找
+        // 注意:不只查找pending,也要查找completed(防止confirm API先执行导致重复创建)
         if (!existingPayment && provider === "paypal" && paypalOrderId) {
           const { data: paymentByOrderId, error: checkOrderError } =
             await supabaseAdmin
               .from("payments")
               .select("id, status, created_at")
               .eq("transaction_id", paypalOrderId)
-              .eq("status", "pending")
+              .in("status", ["pending", "completed"]) // ✅ 修复:查找pending或completed
               .maybeSingle();
 
           if (checkOrderError) {
@@ -2691,42 +2692,52 @@ export class WebhookHandler {
         }
 
         if (existingPayment) {
-          // 更新现有pending记录为completed
-          logInfo("Updating existing pending payment to completed", {
-            operationId,
-            userId,
-            paymentId: existingPayment.id,
-            transactionId: subscriptionId,
-            oldStatus: existingPayment.status,
-            newStatus: "completed",
-          });
-
-          const { error: updateError } = await supabaseAdmin
-            .from("payments")
-            .update({
-              status: "completed",
-              subscription_id: subscription.id,
-              updated_at: now.toISOString(),
-            })
-            .eq("id", existingPayment.id);
-
-          if (updateError) {
-            logError("Failed to update existing payment record", updateError, {
+          // ✅ 如果payment已经是completed,跳过更新(避免重复处理)
+          if (existingPayment.status === "completed") {
+            logInfo("Payment already completed, skipping duplicate webhook processing", {
               operationId,
               userId,
               paymentId: existingPayment.id,
               transactionId: subscriptionId,
             });
-            // 不返回false，更新失败不应该阻止订阅更新
           } else {
-            logBusinessEvent("payment_status_updated", userId, {
+            // 更新现有pending记录为completed
+            logInfo("Updating existing pending payment to completed", {
               operationId,
+              userId,
               paymentId: existingPayment.id,
               transactionId: subscriptionId,
-              oldStatus: "pending",
+              oldStatus: existingPayment.status,
               newStatus: "completed",
-              subscriptionId: subscription.id,
             });
+
+            const { error: updateError } = await supabaseAdmin
+              .from("payments")
+              .update({
+                status: "completed",
+                subscription_id: subscription.id,
+                updated_at: now.toISOString(),
+              })
+              .eq("id", existingPayment.id);
+
+            if (updateError) {
+              logError("Failed to update existing payment record", updateError, {
+                operationId,
+                userId,
+                paymentId: existingPayment.id,
+                transactionId: subscriptionId,
+              });
+              // 不返回false，更新失败不应该阻止订阅更新
+            } else {
+              logBusinessEvent("payment_status_updated", userId, {
+                operationId,
+                paymentId: existingPayment.id,
+                transactionId: subscriptionId,
+                oldStatus: "pending",
+                newStatus: "completed",
+                subscriptionId: subscription.id,
+              });
+            }
           }
         } else {
           // 创建新的支付记录
