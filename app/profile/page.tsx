@@ -153,57 +153,69 @@ export default function ProfilePage() {
       setUser(result);
       setSuccess(t.profile.saved);
 
-      // 更新 localStorage 中的用户信息
+      // 更新缓存和认证状态中的用户信息
       if (typeof window !== "undefined") {
         try {
-          // 使用新的认证状态管理器更新用户信息
-          const { getStoredAuthState, saveAuthState } = await import(
-            "@/lib/auth-state-manager"
-          );
-          const authState = getStoredAuthState();
+          const { isChinaRegion } = await import("@/lib/config/region");
 
-          if (authState) {
-            // 更新用户信息
-            const updatedUser = {
-              ...authState.user,
-              name: result.name,
-              avatar: result.avatar,
-              email: result.email,
-              id: result.id,
-              subscription_plan: result.subscription_plan,
-              subscription_status: result.subscription_status,
-              subscription_expires_at: result.subscription_expires_at,
-              membership_expires_at: result.membership_expires_at,
-            };
-
-            // 重新保存认证状态
-            saveAuthState(
-              authState.accessToken,
-              authState.refreshToken,
-              updatedUser,
-              authState.tokenMeta
+          if (isChinaRegion()) {
+            // 中国版：使用本地认证状态管理器
+            const { getStoredAuthState, saveAuthState } = await import(
+              "@/lib/auth-state-manager"
             );
+            const authState = getStoredAuthState();
 
-            console.log("✅ 已更新认证状态中的用户信息");
-          } else {
-            // 如果没有找到认证状态，尝试更新旧的localStorage键作为后备
-            const cachedUser = localStorage.getItem("auth-user");
-            if (cachedUser) {
-              const userData = JSON.parse(cachedUser);
-              userData.name = result.name;
-              userData.avatar = result.avatar;
-              userData.email = result.email;
-              userData.id = result.id;
-              userData.subscription_plan = result.subscription_plan;
-              userData.subscription_status = result.subscription_status;
-              userData.subscription_expires_at = result.subscription_expires_at;
-              userData.membership_expires_at = result.membership_expires_at;
-              localStorage.setItem("auth-user", JSON.stringify(userData));
-              console.log("✅ 已更新旧localStorage中的用户信息作为后备");
+            if (authState) {
+              // 更新用户信息
+              const updatedUser = {
+                ...authState.user,
+                name: result.name,
+                avatar: result.avatar,
+                email: result.email,
+                id: result.id,
+                subscription_plan: result.subscription_plan,
+                subscription_status: result.subscription_status,
+                subscription_expires_at: result.subscription_expires_at,
+                membership_expires_at: result.membership_expires_at,
+              };
+
+              // 重新保存认证状态
+              saveAuthState(
+                authState.accessToken,
+                authState.refreshToken,
+                updatedUser,
+                authState.tokenMeta
+              );
+
+              console.log("✅ [CN] 已更新认证状态中的用户信息");
+            } else {
+              // 如果没有找到认证状态，尝试更新旧的localStorage键作为后备
+              const cachedUser = localStorage.getItem("auth-user");
+              if (cachedUser) {
+                const userData = JSON.parse(cachedUser);
+                userData.name = result.name;
+                userData.avatar = result.avatar;
+                userData.email = result.email;
+                userData.id = result.id;
+                userData.subscription_plan = result.subscription_plan;
+                userData.subscription_status = result.subscription_status;
+                userData.subscription_expires_at =
+                  result.subscription_expires_at;
+                userData.membership_expires_at = result.membership_expires_at;
+                localStorage.setItem("auth-user", JSON.stringify(userData));
+                console.log("✅ [CN] 已更新旧localStorage中的用户信息作为后备");
+              }
             }
+          } else {
+            // 国际版：使用 Supabase 缓存管理器
+            const { saveSupabaseUserCache } = await import(
+              "@/lib/auth-state-manager-intl"
+            );
+            saveSupabaseUserCache(result);
+            console.log("✅ [INTL] 已更新国际版用户缓存，支持跨标签页同步");
           }
         } catch (e) {
-          console.error("更新认证状态失败:", e);
+          console.error("❌ 更新缓存失败:", e);
         }
       }
     } catch (err) {
@@ -337,7 +349,9 @@ export default function ProfilePage() {
                     size="sm"
                     onClick={() => router.push(buildUrl("/payment"))}
                   >
-                    {user.membership_expires_at ? t.profile.renew : t.profile.activateMembership}
+                    {user.membership_expires_at
+                      ? t.profile.renew
+                      : t.profile.activateMembership}
                   </Button>
                 </div>
               </div>

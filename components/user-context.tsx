@@ -79,6 +79,23 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
       const updatedUser = await response.json();
       setUser(updatedUser as UserProfile);
+
+      // ✅ 国际版：同时保存到缓存，确保其他标签页也能同步
+      if (!isChinaRegion()) {
+        try {
+          const { saveSupabaseUserCache } = await import(
+            "@/lib/auth-state-manager-intl"
+          );
+          saveSupabaseUserCache(updatedUser);
+          console.log("✅ [Auth INTL] 用户信息已缓存");
+        } catch (cacheError) {
+          console.warn(
+            "⚠️ [Auth INTL] 缓存保存失败，但用户信息已更新:",
+            cacheError
+          );
+        }
+      }
+
       console.log("✅ [Auth] 用户信息已刷新");
     } catch (error) {
       console.error("❌ [Auth] 刷新用户信息失败:", error);
@@ -111,9 +128,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           const cachedUser = getSupabaseUserCache();
 
           if (cachedUser) {
-            console.log(
-              `📦 [Auth] 从缓存恢复用户: ${cachedUser.email}`
-            );
+            console.log(`📦 [Auth] 从缓存恢复用户: ${cachedUser.email}`);
             authState = { user: cachedUser };
           } else {
             // 缓存miss，从 Supabase 读取
