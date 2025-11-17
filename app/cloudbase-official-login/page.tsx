@@ -43,10 +43,18 @@ export default function OfficialCloudBaseLogin() {
         // 动态导入 CloudBase JS SDK
         const cloudbase = await import("@cloudbase/js-sdk");
 
-        // 初始化 SDK（使用从API获取的配置或后备值）
+        // 验证必需的配置
+        if (!wechatCloudbaseId) {
+          console.error(
+            "❌ Missing NEXT_PUBLIC_WECHAT_CLOUDBASE_ID. Please configure it in your deployment platform."
+          );
+          setLoading(false);
+          return;
+        }
+
+        // 初始化 SDK
         const app = cloudbase.default.init({
-          env:
-            wechatCloudbaseId || "multigpt-6g9pqxiz52974a7c",
+          env: wechatCloudbaseId,
         });
 
         // 挂载到 window 对象（可选）
@@ -69,7 +77,7 @@ export default function OfficialCloudBaseLogin() {
     };
 
     initCloudBase();
-  }, []);
+  }, [wechatCloudbaseId]);
 
   // 检查登录状态
   const checkLoginStatus = async (app: any) => {
@@ -96,7 +104,7 @@ export default function OfficialCloudBaseLogin() {
     try {
       const auth = app.auth();
       const provider = auth.weixinAuthProvider({
-        appid: wechatAppId || "your_wechat_appid",
+        appid: wechatAppId,
         scope: "snsapi_base",
       });
 
@@ -124,7 +132,7 @@ export default function OfficialCloudBaseLogin() {
 
       // 检查是否从微信回调返回
       const provider = auth.weixinAuthProvider({
-        appid: wechatAppId || "your_wechat_appid",
+        appid: wechatAppId,
         scope: "snsapi_base",
       });
 
