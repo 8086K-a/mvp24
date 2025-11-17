@@ -146,12 +146,16 @@ class SupabaseAuthClient implements AuthClient {
   }
 
   /**
-   * 获取完整用户信息并缓存
-   * @param userId 用户ID
+   * 🔑 显式刷新用户完整信息并缓存
+   * 按需调用，仅在以下时机调用：
+   * - 用户登录成功
+   * - 支付成功
+   * - 用户保存个人资料
+   * - 用户手动刷新
    */
-  private async cacheFullUserProfile(userId: string): Promise<void> {
+  async refreshUserProfile(): Promise<void> {
     try {
-      console.log("📦 [Supabase] 获取完整用户信息:", userId);
+      console.log("🔄 [Supabase] 主动刷新用户信息...");
       const response = await fetch("/api/profile");
 
       if (response.ok) {
@@ -159,16 +163,17 @@ class SupabaseAuthClient implements AuthClient {
         const {
           saveSupabaseUserCache,
         } = await import("@/lib/auth-state-manager-intl");
+        // 🔒 安全过滤会在 saveSupabaseUserCache 内部自动进行
         saveSupabaseUserCache(fullProfile);
-        console.log("✅ [Supabase] 完整用户信息已缓存");
+        console.log("✅ [Supabase] 用户信息刷新成功");
       } else {
         console.warn(
-          "⚠️ [Supabase] 获取完整用户信息失败:",
+          "⚠️ [Supabase] 刷新用户信息失败:",
           response.status
         );
       }
     } catch (error) {
-      console.warn("⚠️ [Supabase] 缓存用户信息失败:", error);
+      console.warn("⚠️ [Supabase] 刷新用户信息失败:", error);
     }
   }
 
@@ -180,9 +185,9 @@ class SupabaseAuthClient implements AuthClient {
       const supabase = await this.ensureSupabase();
       const result = await supabase.auth.signInWithPassword(params);
 
-      // ✅ 登录成功后，获取完整用户信息并缓存
+      // ✅ 登录成功后，显式刷新完整用户信息并缓存
       if (result.data.user && !result.error) {
-        await this.cacheFullUserProfile(result.data.user.id);
+        await this.refreshUserProfile();
       }
 
       return result;
@@ -338,15 +343,14 @@ class SupabaseAuthClient implements AuthClient {
         };
       }
 
-      // 缓存 miss，从 Supabase 获取
-      console.log("🔍 [Supabase] 缓存未命中，从 Supabase 获取用户信息");
+      // ✅ 缓存 miss，回退到 Supabase session 基本信息
+      // 🔑 关键改进：不自动调用 /api/profile，避免频繁请求
+      console.log("🔍 [Supabase] 缓存未命中，使用 Supabase session 基本信息");
       const supabase = await this.ensureSupabase();
       const result = await supabase.auth.getUser();
 
-      // 获取成功后，拉取完整信息并缓存
-      if (result.data.user) {
-        await this.cacheFullUserProfile(result.data.user.id);
-      }
+      // ⚠️ 不再自动刷新完整信息
+      // 只在明确的时机刷新：登录、支付成功、保存个人资料
 
       return result;
     } catch (error) {
@@ -972,4 +976,12 @@ export const auth = {
     getAuthClient().signInWithOAuth(params),
   toDefaultLoginPage: (redirectUrl?: string) =>
     getAuthClient().toDefaultLoginPage?.(redirectUrl),
+  // 🔑 显式刷新用户信息（按需调用）
+  refreshUserProfile: () => {
+    const client = getAuthClient();
+    if ("refreshUserProfile" in client && typeof client.refreshUserProfile === "function") {
+      return client.refreshUserProfile();
+    }
+    return Promise.resolve();
+  },
 };

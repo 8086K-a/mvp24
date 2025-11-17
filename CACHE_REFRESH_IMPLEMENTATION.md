@@ -54,7 +54,7 @@ if (result.success) {
 
   // 🔑 关键修复：刷新用户信息以反映新的会员状态
   try {
-    await refreshUser();  // 调用 user-context 中的刷新方法
+    await refreshUser(); // 调用 user-context 中的刷新方法
     console.log("✅ 用户信息已刷新，会员状态已更新");
   } catch (refreshError) {
     console.warn("⚠️ 刷新用户信息失败，但支付已成功:", refreshError);
@@ -74,7 +74,7 @@ if (result.success) {
 const refreshUser = useCallback(async () => {
   try {
     console.log("🔄 [Auth] 刷新用户信息...");
-    
+
     // 获取认证头
     const { tokenManager } = await import("@/lib/frontend-token-manager");
     const headers = await tokenManager.getAuthHeaderAsync();
@@ -91,18 +91,23 @@ const refreshUser = useCallback(async () => {
 
     const updatedUser = await response.json();
     setUser(updatedUser as UserProfile);
-    
+
     // ✅ 国际版：同时保存到缓存，确保其他标签页也能同步
     if (!isChinaRegion()) {
       try {
-        const { saveSupabaseUserCache } = await import("@/lib/auth-state-manager-intl");
+        const { saveSupabaseUserCache } = await import(
+          "@/lib/auth-state-manager-intl"
+        );
         saveSupabaseUserCache(updatedUser);
         console.log("✅ [Auth INTL] 用户信息已缓存");
       } catch (cacheError) {
-        console.warn("⚠️ [Auth INTL] 缓存保存失败，但用户信息已更新:", cacheError);
+        console.warn(
+          "⚠️ [Auth INTL] 缓存保存失败，但用户信息已更新:",
+          cacheError
+        );
       }
     }
-    
+
     console.log("✅ [Auth] 用户信息已刷新");
   } catch (error) {
     console.error("❌ [Auth] 刷新用户信息失败:", error);
@@ -119,7 +124,7 @@ const refreshUser = useCallback(async () => {
 ```tsx
 const handleSave = async () => {
   // ... 保存逻辑 ...
-  
+
   const result = await response.json();
   setUser(result);
   setSuccess(t.profile.saved);
@@ -128,7 +133,7 @@ const handleSave = async () => {
   if (typeof window !== "undefined") {
     try {
       const { isChinaRegion } = await import("@/lib/config/region");
-      
+
       if (isChinaRegion()) {
         // 中国版：使用本地认证状态管理器
         const { getStoredAuthState, saveAuthState } = await import(
@@ -170,7 +175,7 @@ const handleSave = async () => {
 
 ### 4. Webhook 中的用户信息更新
 
-**文件**: `lib/payment/webhook-handler.ts` (第2535行)
+**文件**: `lib/payment/webhook-handler.ts` (第 2535 行)
 
 ```typescript
 if (subscription) {
@@ -199,6 +204,7 @@ if (subscription) {
 ### 多标签页同步
 
 **国际版**: `auth-state-manager-intl.ts`
+
 ```typescript
 // localStorage 键
 const SUPABASE_USER_CACHE_KEY = "supabase-user-cache";
@@ -207,11 +213,14 @@ const SUPABASE_USER_CACHE_KEY = "supabase-user-cache";
 function saveSupabaseUserCache(user: UserProfile) {
   localStorage.setItem(SUPABASE_USER_CACHE_KEY, JSON.stringify({ user }));
   // 触发自定义事件供其他标签页监听
-  window.dispatchEvent(new CustomEvent("supabase-user-changed", { detail: user }));
+  window.dispatchEvent(
+    new CustomEvent("supabase-user-changed", { detail: user })
+  );
 }
 ```
 
 **中国版**: `auth-state-manager.ts`
+
 ```typescript
 // localStorage 键
 const AUTH_STATE_KEY = "app-auth-state";
@@ -255,10 +264,16 @@ useEffect(() => {
       }
     };
 
-    window.addEventListener("supabase-user-changed", handleSupabaseUserChanged as EventListener);
-    
+    window.addEventListener(
+      "supabase-user-changed",
+      handleSupabaseUserChanged as EventListener
+    );
+
     return () => {
-      window.removeEventListener("supabase-user-changed", handleSupabaseUserChanged as EventListener);
+      window.removeEventListener(
+        "supabase-user-changed",
+        handleSupabaseUserChanged as EventListener
+      );
     };
   }
 }, []);
@@ -345,12 +360,12 @@ window.addEventListener("storage", (e) => {
 
 ### 常见问题排查
 
-| 问题 | 原因 | 解决方案 |
-|------|------|--------|
-| 支付成功后用户信息未更新 | refreshUser() 未被调用 | 检查 payment/success/page.tsx 中是否有 await refreshUser() |
-| 其他标签页未同步 | 缓存未正确保存 | 检查 localStorage 中是否有对应的缓存键 |
-| 会员期限未更新 | /api/profile GET 未从 subscriptions 表读取 | 检查 api/profile/route.ts 中是否查询了 subscriptions 表 |
-| 个人资料保存后图片未显示 | 缓存未更新 | 检查 profile/page.tsx 中的 saveSupabaseUserCache() 调用 |
+| 问题                     | 原因                                       | 解决方案                                                   |
+| ------------------------ | ------------------------------------------ | ---------------------------------------------------------- |
+| 支付成功后用户信息未更新 | refreshUser() 未被调用                     | 检查 payment/success/page.tsx 中是否有 await refreshUser() |
+| 其他标签页未同步         | 缓存未正确保存                             | 检查 localStorage 中是否有对应的缓存键                     |
+| 会员期限未更新           | /api/profile GET 未从 subscriptions 表读取 | 检查 api/profile/route.ts 中是否查询了 subscriptions 表    |
+| 个人资料保存后图片未显示 | 缓存未更新                                 | 检查 profile/page.tsx 中的 saveSupabaseUserCache() 调用    |
 
 ## 性能考虑
 
@@ -366,4 +381,3 @@ window.addEventListener("storage", (e) => {
 - ✅ 国际版和中国版都支持
 - ✅ 多标签页自动同步
 - ✅ 完善的错误处理和日志记录
-

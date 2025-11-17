@@ -1,6 +1,6 @@
 /**
  * Supabase (国际版) 用户缓存管理器
- * 为国际版提供与国内版一致的用户信息缓存和跨标签页同步功能
+ * 只缓存 UI 需要的最小字段，遵循安全最佳实践
  */
 
 export interface SupabaseUserProfile {
@@ -10,9 +10,8 @@ export interface SupabaseUserProfile {
   avatar?: string;
   subscription_plan?: string;
   subscription_status?: string;
-  subscription_expires_at?: string;
   membership_expires_at?: string;
-  [key: string]: any;
+  // 🔒 安全设计：不缓存 app_metadata, identities, provider_id 等敏感信息
 }
 
 export interface SupabaseUserCache {
@@ -22,37 +21,48 @@ export interface SupabaseUserCache {
 }
 
 const SUPABASE_USER_CACHE_KEY = "supabase-user-cache";
-const DEFAULT_CACHE_DURATION = 300; // 5分钟 (与国内版保持一致)
+const DEFAULT_CACHE_DURATION = 3600; // 1小时 (遵循现代平台最佳实践)
 
 /**
  * 保存用户信息到本地缓存
- * @param user 用户信息对象
- * @param expiresIn 缓存有效期(秒)，默认300秒
+ * @param user 用户信息对象（可能包含额外字段，只会提取需要的字段）
+ * @param expiresIn 缓存有效期(秒)，默认3600秒(1小时)
  */
 export function saveSupabaseUserCache(
-  user: SupabaseUserProfile,
+  user: Partial<SupabaseUserProfile> & { id: string; email: string },
   expiresIn: number = DEFAULT_CACHE_DURATION
 ): void {
   if (typeof window === "undefined") return;
 
   try {
+    // 🔒 安全过滤：只保存明确定义的字段，丢弃所有敏感信息
+    const sanitizedUser: SupabaseUserProfile = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatar: user.avatar,
+      subscription_plan: user.subscription_plan,
+      subscription_status: user.subscription_status,
+      membership_expires_at: user.membership_expires_at,
+    };
+
     const cache: SupabaseUserCache = {
-      user,
+      user: sanitizedUser,
       cachedAt: Date.now(),
       expiresIn,
     };
 
     localStorage.setItem(SUPABASE_USER_CACHE_KEY, JSON.stringify(cache));
     console.log("✅ [Supabase Cache] 用户信息已缓存:", {
-      userId: user.id,
-      email: user.email,
-      expiresIn: `${expiresIn}秒`,
+      userId: sanitizedUser.id,
+      email: sanitizedUser.email,
+      expiresIn: `${expiresIn}秒 (${Math.round(expiresIn / 60)}分钟)`,
     });
 
     // 触发跨标签页同步事件
     window.dispatchEvent(
       new CustomEvent("supabase-user-changed", {
-        detail: user,
+        detail: sanitizedUser,
       })
     );
   } catch (error) {

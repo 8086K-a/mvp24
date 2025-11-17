@@ -111,9 +111,12 @@ export async function POST(request: NextRequest) {
 
     try {
       // 查询是否已有该微信用户
-      const queryResult = await usersCollection.where({
-        wechat_openid: openid,
-      }).limit(1).get();
+      const queryResult = await usersCollection
+        .where({
+          wechat_openid: openid,
+        })
+        .limit(1)
+        .get();
 
       if (queryResult.data && queryResult.data.length > 0) {
         existingUser = queryResult.data[0];
@@ -274,10 +277,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 在运行时读取环境变量（而不是编译时）
+    const appId = process.env.NEXT_PUBLIC_WECHAT_APP_ID;
+
     // 返回微信登录配置
     return NextResponse.json({
       supported: true,
-      appId: process.env.NEXT_PUBLIC_WECHAT_APP_ID,
+      appId: appId || null,
       scope: "snsapi_userinfo",
     });
   } catch (error) {

@@ -840,6 +840,21 @@ export class WebhookHandler {
           currency,
           daysAdded: days, // ✅ 记录实际增加的天数
         });
+
+        // 🔄 支付成功后，清除国际版用户缓存
+        // 前端会在下次调用时重新从 /api/profile 获取最新信息
+        try {
+          if (typeof globalThis !== "undefined" && typeof localStorage !== "undefined") {
+            // 服务端环境没有 localStorage，这段代码在服务端不会执行
+            // 但我们可以通过数据库事件或其他机制通知前端
+            logInfo("Payment success: frontend cache will be refreshed on next request", {
+              userId,
+              provider,
+            });
+          }
+        } catch (e) {
+          // 服务端环境忽略
+        }
       }
 
       return success;

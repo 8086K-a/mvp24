@@ -15,6 +15,24 @@ export default function OfficialCloudBaseLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
+  const [wechatAppId, setWechatAppId] = useState<string>("");
+
+  // 从服务端API获取运行时配置
+  useEffect(() => {
+    const fetchRuntimeConfig = async () => {
+      try {
+        const response = await fetch("/api/auth/config");
+        if (response.ok) {
+          const data = await response.json();
+          setWechatAppId(data.config?.wechatAppId || "");
+        }
+      } catch (error) {
+        console.error("Failed to fetch runtime config:", error);
+      }
+    };
+
+    fetchRuntimeConfig();
+  }, []);
 
   // 初始化 CloudBase SDK
   useEffect(() => {
@@ -77,7 +95,7 @@ export default function OfficialCloudBaseLogin() {
     try {
       const auth = app.auth();
       const provider = auth.weixinAuthProvider({
-        appid: process.env.NEXT_PUBLIC_WECHAT_APP_ID || "your_wechat_appid",
+        appid: wechatAppId || "your_wechat_appid",
         scope: "snsapi_base",
       });
 
@@ -105,7 +123,7 @@ export default function OfficialCloudBaseLogin() {
 
       // 检查是否从微信回调返回
       const provider = auth.weixinAuthProvider({
-        appid: process.env.NEXT_PUBLIC_WECHAT_APP_ID || "your_wechat_appid",
+        appid: wechatAppId || "your_wechat_appid",
         scope: "snsapi_base",
       });
 
