@@ -145,13 +145,47 @@ class SupabaseAuthClient implements AuthClient {
     throw new Error("Supabase client initialization failed");
   }
 
+  /**
+   * 获取完整用户信息并缓存
+   * @param userId 用户ID
+   */
+  private async cacheFullUserProfile(userId: string): Promise<void> {
+    try {
+      console.log("📦 [Supabase] 获取完整用户信息:", userId);
+      const response = await fetch("/api/profile");
+
+      if (response.ok) {
+        const fullProfile = await response.json();
+        const {
+          saveSupabaseUserCache,
+        } = await import("@/lib/auth-state-manager-intl");
+        saveSupabaseUserCache(fullProfile);
+        console.log("✅ [Supabase] 完整用户信息已缓存");
+      } else {
+        console.warn(
+          "⚠️ [Supabase] 获取完整用户信息失败:",
+          response.status
+        );
+      }
+    } catch (error) {
+      console.warn("⚠️ [Supabase] 缓存用户信息失败:", error);
+    }
+  }
+
   async signInWithPassword(params: {
     email: string;
     password: string;
   }): Promise<AuthResponse> {
     try {
       const supabase = await this.ensureSupabase();
-      return await supabase.auth.signInWithPassword(params);
+      const result = await supabase.auth.signInWithPassword(params);
+
+      // ✅ 登录成功后，获取完整用户信息并缓存
+      if (result.data.user && !result.error) {
+        await this.cacheFullUserProfile(result.data.user.id);
+      }
+
+      return result;
     } catch (error) {
       return {
         data: { user: null, session: null },
@@ -257,7 +291,15 @@ class SupabaseAuthClient implements AuthClient {
   async signOut(): Promise<{ error: Error | null }> {
     try {
       const supabase = await this.ensureSupabase();
-      return await supabase.auth.signOut();
+      const result = await supabase.auth.signOut();
+
+      // ✅ 登出时清除缓存
+      const { clearSupabaseUserCache } = await import(
+        "@/lib/auth-state-manager-intl"
+      );
+      clearSupabaseUserCache();
+
+      return result;
     } catch (error) {
       return {
         error:
@@ -273,8 +315,40 @@ class SupabaseAuthClient implements AuthClient {
     error: Error | null;
   }> {
     try {
+      // ✅ 优先从缓存读取
+      const { getSupabaseUserCache } = await import(
+        "@/lib/auth-state-manager-intl"
+      );
+      const cachedUser = getSupabaseUserCache();
+
+      if (cachedUser) {
+        console.log("📦 [Supabase] 使用缓存的用户信息");
+        return {
+          data: {
+            user: {
+              id: cachedUser.id,
+              email: cachedUser.email,
+              user_metadata: {
+                full_name: cachedUser.name,
+                avatar_url: cachedUser.avatar,
+              },
+            },
+          },
+          error: null,
+        };
+      }
+
+      // 缓存 miss，从 Supabase 获取
+      console.log("🔍 [Supabase] 缓存未命中，从 Supabase 获取用户信息");
       const supabase = await this.ensureSupabase();
-      return await supabase.auth.getUser();
+      const result = await supabase.auth.getUser();
+
+      // 获取成功后，拉取完整信息并缓存
+      if (result.data.user) {
+        await this.cacheFullUserProfile(result.data.user.id);
+      }
+
+      return result;
     } catch (error) {
       return {
         data: { user: null },

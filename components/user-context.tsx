@@ -103,27 +103,41 @@ export function UserProvider({ children }: { children: ReactNode }) {
           // CN：从 CloudBase 的 app-auth-state 读取
           authState = getStoredAuthState();
         } else {
-          // INTL：从 Supabase 的 getSession() 读取
-          console.log("🌍 [Auth] INTL 模式，从 Supabase 读取 session...");
-          const { data, error } = await supabase.auth.getSession();
-          if (error) {
-            console.error("❌ [Auth] Supabase getSession 失败:", error);
-          } else if (data?.session?.user) {
+          // ✅ INTL：优先从缓存读取,缓存miss再从Supabase读取
+          console.log("🌍 [Auth] INTL 模式，检查缓存...");
+          const { getSupabaseUserCache } = await import(
+            "@/lib/auth-state-manager-intl"
+          );
+          const cachedUser = getSupabaseUserCache();
+
+          if (cachedUser) {
             console.log(
-              `✅ [Auth] 从 Supabase 恢复用户: ${data.session.user.email}`
+              `📦 [Auth] 从缓存恢复用户: ${cachedUser.email}`
             );
-            // 转换 Supabase 用户为 UserProfile 格式
-            authState = {
-              user: {
-                id: data.session.user.id,
-                email: data.session.user.email || "",
-                name:
-                  data.session.user.user_metadata?.displayName ||
-                  data.session.user.user_metadata?.full_name ||
-                  "",
-                avatar: data.session.user.user_metadata?.avatar || "",
-              },
-            };
+            authState = { user: cachedUser };
+          } else {
+            // 缓存miss，从 Supabase 读取
+            console.log("🔍 [Auth] 缓存未命中，从 Supabase 读取 session...");
+            const { data, error } = await supabase.auth.getSession();
+            if (error) {
+              console.error("❌ [Auth] Supabase getSession 失败:", error);
+            } else if (data?.session?.user) {
+              console.log(
+                `✅ [Auth] 从 Supabase 恢复用户: ${data.session.user.email}`
+              );
+              // 转换 Supabase 用户为 UserProfile 格式
+              authState = {
+                user: {
+                  id: data.session.user.id,
+                  email: data.session.user.email || "",
+                  name:
+                    data.session.user.user_metadata?.displayName ||
+                    data.session.user.user_metadata?.full_name ||
+                    "",
+                  avatar: data.session.user.user_metadata?.avatar || "",
+                },
+              };
+            }
           }
         }
 
@@ -156,14 +170,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
     initializeAuth();
   }, []);
 
-  // P1：多标签页同步（CN模式下监听 storage 事件）
+  // P1：多标签页同步（监听 storage 事件）
   useEffect(() => {
-    if (isChinaRegion()) {
-      const handleStorageChange = (event: StorageEvent) => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (isChinaRegion()) {
+        // 国内版：监听 app-auth-state
         if (event.key === "app-auth-state") {
-          console.log("📡 [Auth] 检测到其他标签页的认证变化");
+          console.log("📡 [Auth CN] 检测到其他标签页的认证变化");
           if (!event.newValue) {
-            // 其他标签页登出了
             setUser(null);
           } else {
             try {
@@ -172,16 +186,35 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 setUser(authState.user as UserProfile);
               }
             } catch (error) {
-              console.error("❌ [Auth] 解析跨标签页数据失败:", error);
+              console.error("❌ [Auth CN] 解析跨标签页数据失败:", error);
               setUser(null);
             }
           }
         }
-      };
+      } else {
+        // ✅ 国际版：监听 supabase-user-cache
+        if (event.key === "supabase-user-cache") {
+          console.log("📡 [Auth INTL] 检测到其他标签页的用户信息变化");
+          if (!event.newValue) {
+            setUser(null);
+          } else {
+            try {
+              const cache = JSON.parse(event.newValue);
+              if (cache.user) {
+                setUser(cache.user as UserProfile);
+                console.log("✅ [Auth INTL] 从其他标签页同步用户信息");
+              }
+            } catch (error) {
+              console.error("❌ [Auth INTL] 解析跨标签页数据失败:", error);
+              setUser(null);
+            }
+          }
+        }
+      }
+    };
 
-      window.addEventListener("storage", handleStorageChange);
-      return () => window.removeEventListener("storage", handleStorageChange);
-    }
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   // P1：自定义事件监听（同标签页内 auth 状态变化）
@@ -219,9 +252,34 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // ✅ 国际版：监听 supabase-user-changed 自定义事件（同标签页内）
+    const handleSupabaseUserChanged = (event: CustomEvent) => {
+      console.log("🔔 [Auth INTL] 检测到同标签页内用户信息变化");
+      if (event.detail) {
+        setUser(event.detail as UserProfile);
+      } else {
+        setUser(null);
+      }
+    };
+
     window.addEventListener("auth-state-changed", handleAuthStateChanged);
-    return () =>
+
+    if (!isChinaRegion()) {
+      window.addEventListener(
+        "supabase-user-changed",
+        handleSupabaseUserChanged as EventListener
+      );
+    }
+
+    return () => {
       window.removeEventListener("auth-state-changed", handleAuthStateChanged);
+      if (!isChinaRegion()) {
+        window.removeEventListener(
+          "supabase-user-changed",
+          handleSupabaseUserChanged as EventListener
+        );
+      }
+    };
   }, []);
 
   // INTL：Supabase 认证状态变化监听器
