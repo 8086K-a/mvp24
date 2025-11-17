@@ -113,10 +113,12 @@ function generateConfig(region: DeploymentRegion): DeploymentConfig {
  * - "CN": 中国区域（使用 CloudBase）
  * - "INTL": 国际区域（使用 Supabase）
  *
- * ⚠️ 重要：这是国外版本，必须设置为 "INTL"
+ * 环境变量 NEXT_PUBLIC_DEPLOYMENT_REGION：
+ * - 未设置或其他值：默认为中国版 (CN)
+ * - "INTL"：国际版
  */
 const DEPLOYMENT_REGION: DeploymentRegion =
-  process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "CN" ? "CN" : "INTL";
+  process.env.NEXT_PUBLIC_DEPLOYMENT_REGION === "INTL" ? "INTL" : "CN";
 
 // 在运行时验证区域设置
 if (typeof window === "undefined") {
