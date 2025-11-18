@@ -6,16 +6,15 @@ import {
   checkSensitiveDataExposure,
 } from "@/lib/env-validation";
 import { csrfProtection } from "@/lib/csrf";
-import { RegionConfig, getDEPLOY_REGION } from "@/lib/config/region";
 
 /**
- * IP检测和地理分流中间件
+ * IP检测和访问控制中间件
  * 实现以下功能：
  * 1. 检测用户IP地理位置
- * 2. 完全禁止欧洲IP访问（包括调试模式）
- * 3. 将国内用户分流到国内系统，国外用户分流到国际系统
+ * 2. 完全禁止欧洲IP访问（符合GDPR合规要求）
+ * 3. 为响应添加地理信息头供前端使用
  *
- * 注意：认证逻辑由前端处理，避免middleware与前端产生重定向循环
+ * 注意：不进行任何重定向，用户访问哪个域名就使用哪个系统
  */
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
@@ -216,46 +215,7 @@ export async function middleware(request: NextRequest) {
       );
     }
 
-    // 2. 地理分流逻辑（基于 DEPLOY_REGION 环境变量的重定向）
-    // 注意：这里只是做重定向（门卫），真正的系统切换由 DEPLOY_REGION 环境变量控制
-    if (!pathname.startsWith("/api/") && RegionConfig.ipDetection.enabled) {
-      const { domestic, international } = RegionConfig.redirectUrls;
-
-      // 只有配置了两个不同的 URL 才进行重定向
-      if (domestic && international && domestic !== international) {
-        // 优先使用 DEPLOY_REGION 环境变量决定目标域名，而不是IP检测
-        const isDomesticDeployment = getDEPLOY_REGION() === "CN";
-        const targetUrl = isDomesticDeployment ? domestic : international;
-
-        // 检查当前域名是否与目标域名匹配
-        const currentHost = request.headers.get("host");
-        const targetUrlObj = new URL(targetUrl);
-
-        // 使用 hostname 而不是 host，避免包含端口号
-        // 对于 HTTPS，不需要显式指定端口 443
-        const targetHost = targetUrlObj.hostname;
-        const currentHostname = currentHost?.split(':')[0]; // 移除端口号
-
-        if (currentHostname !== targetHost) {
-          const redirectUrl = new URL(request.url);
-          redirectUrl.protocol = targetUrlObj.protocol;
-          redirectUrl.hostname = targetHost;
-          redirectUrl.port = ''; // 清除端口号，使用协议默认端口
-
-          // 重定向发生 - 不记录DEPLOY_REGION环境变量以保护敏感信息
-          console.log(`🌍 域名重定向: ${currentHost} -> ${redirectUrl.host}`);
-
-          return NextResponse.redirect(redirectUrl, {
-            status: 301, // 永久重定向（SEO 友好）
-          });
-        } else {
-          // 用户已在正确域名 - 不记录DEPLOY_REGION环境变量以保护敏感信息
-          console.log(`✅ 用户已在正确域名: ${currentHost}`);
-        }
-      }
-    }
-
-    // 3. 为响应添加地理信息头（用于前端判断区域）
+    // 2. 为响应添加地理信息头（用于前端判断区域）
     const response = NextResponse.next();
     // 为 API 路由添加 CORS 响应头（基于白名单反射）
     if (pathname.startsWith("/api/")) {
