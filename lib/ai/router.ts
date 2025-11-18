@@ -5,7 +5,7 @@
 
 import { BaseAIProvider } from "./providers/base-provider";
 import { AIGatewayProvider } from "./providers/ai-gateway-provider";
-import { DeepSeekProvider } from "./providers/deepseek-provider";
+import { DashScopeProvider } from "./providers/dashscope-provider";
 import { AIProviderError } from "./types";
 
 /**
@@ -37,10 +37,10 @@ class AIRouter {
    */
   private initialize(): void {
     try {
-      // 注册 DeepSeek Provider（中国区域，直连）
-      if (process.env.DEEPSEEK_API_KEY) {
-        const deepseekProvider = new DeepSeekProvider();
-        this.registerProvider(deepseekProvider);
+      // 注册 DashScope Provider（中国区域，阿里云通义千问）
+      if (process.env.DASHSCOPE_API_KEY) {
+        const dashscopeProvider = new DashScopeProvider();
+        this.registerProvider(dashscopeProvider);
       }
 
       // 注册 Vercel AI Gateway Provider（全球区域，统一端点）

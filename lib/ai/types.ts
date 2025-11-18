@@ -138,13 +138,13 @@ export enum StreamStatus {
 export type AIProviderName =
   | "openai"
   | "anthropic"
+  | "qwen" // 阿里云通义千问 (DashScope)
+  | "google"
   | "deepseek"
-  | "qwen"
-  | "ernie"
-  | "glm"
-  | "spark"
-  | "hunyuan"
-  | "google";
+  | "ernie" // 百度文心一言
+  | "glm" // 智谱清言
+  | "spark" // 讯飞星火
+  | "hunyuan"; // 腾讯混元
 
 /**
  * AI 能力标签

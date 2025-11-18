@@ -50,7 +50,9 @@ const envSchema = z.object({
     .string()
     .regex(/^sk-ant-/)
     .optional(),
-  DEEPSEEK_API_KEY: z.string().optional(),
+  DASHSCOPE_API_KEY: z.string().optional(), // 阿里云通义千问
+  DASHSCOPE_BASE_URL: z.string().url().optional(),
+  AI_GATEWAY_API_KEY: z.string().optional(), // Vercel AI Gateway
 
   // 地理分流配置
   ALLOWED_ORIGINS: z.string().optional(),
@@ -133,7 +135,8 @@ export function checkSensitiveDataExposure(): {
     "PAYPAL_CLIENT_SECRET",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "DEEPSEEK_API_KEY",
+    "DASHSCOPE_API_KEY",
+    "AI_GATEWAY_API_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SENTRY_DSN", // 虽然DSN是公开的，但仍需检查
   ];
