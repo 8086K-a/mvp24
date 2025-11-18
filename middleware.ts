@@ -229,12 +229,18 @@ export async function middleware(request: NextRequest) {
 
         // 检查当前域名是否与目标域名匹配
         const currentHost = request.headers.get("host");
-        const targetHost = new URL(targetUrl).host;
+        const targetUrlObj = new URL(targetUrl);
 
-        if (currentHost !== targetHost) {
+        // 使用 hostname 而不是 host，避免包含端口号
+        // 对于 HTTPS，不需要显式指定端口 443
+        const targetHost = targetUrlObj.hostname;
+        const currentHostname = currentHost?.split(':')[0]; // 移除端口号
+
+        if (currentHostname !== targetHost) {
           const redirectUrl = new URL(request.url);
-          redirectUrl.protocol = new URL(targetUrl).protocol;
-          redirectUrl.host = targetHost;
+          redirectUrl.protocol = targetUrlObj.protocol;
+          redirectUrl.hostname = targetHost;
+          redirectUrl.port = ''; // 清除端口号，使用协议默认端口
 
           // 重定向发生 - 不记录DEPLOY_REGION环境变量以保护敏感信息
           console.log(`🌍 域名重定向: ${currentHost} -> ${redirectUrl.host}`);
