@@ -8,6 +8,7 @@ import {
   WorkflowIcon as Workspace,
   Library,
   Download,
+  FileText,
   CreditCard,
   Menu,
   Plus,
@@ -27,7 +28,6 @@ import {
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getClientAuthToken } from "@/lib/client-auth";
-import { isInApp } from "@/lib/platform-detection";
 import { toast } from "sonner";
 
 interface ChatSession {
@@ -58,12 +58,6 @@ export function Header({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [inApp, setInApp] = useState(false);
-
-  // 检测是否在 App 中
-  useEffect(() => {
-    setInApp(isInApp());
-  }, []);
 
   // 获取当前URL的debug参数
   const currentDebugParam =
@@ -213,7 +207,7 @@ export function Header({
           className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm p-2 sm:px-3"
           title={t.header.export}
         >
-          <Download className="w-4 h-4 flex-shrink-0" />
+          <FileText className="w-4 h-4 flex-shrink-0" />
           <span className="hidden lg:inline">{t.header.export}</span>
         </Button>
 
@@ -234,7 +228,6 @@ export function Header({
           variant="outline"
           size="sm"
           onClick={() => {
-            console.log("Language toggle clicked, current:", language);
             toggleLanguage();
           }}
           className="flex items-center gap-1 text-xs sm:text-sm"
@@ -246,16 +239,14 @@ export function Header({
           </span>
         </Button>
 
-        {!inApp && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push(buildUrl("/download"))}
-            title="Download"
-          >
-            <Download className="w-4 h-4" />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push(buildUrl("/download"))}
+          title="Download"
+        >
+          <Download className="w-4 h-4" />
+        </Button>
         <UserMenu />
       </div>
 
