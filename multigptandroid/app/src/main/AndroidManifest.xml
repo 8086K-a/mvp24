@@ -134,6 +134,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.multigpt.android.app.wxapi.WXPayEntryActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity="${applicationId}"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- For file sharing without having to use external permissions. -->
         <provider
             android:name="androidx.core.content.FileProvider"

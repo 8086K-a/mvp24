@@ -396,7 +396,13 @@ export async function GET(request: NextRequest) {
           amount,
           currency,
           status: "completed",
-          payment_method: sessionId ? "stripe" : token ? "paypal" : "alipay",
+          payment_method: sessionId
+            ? "stripe"
+            : token
+            ? "paypal"
+            : wechatOutTradeNo
+            ? "wechat"
+            : "alipay",
           transaction_id: transactionId,
           metadata: {
             days,
@@ -404,6 +410,10 @@ export async function GET(request: NextRequest) {
             billingCycle: days === 365 ? "yearly" : "monthly",
           },
         };
+
+        if (wechatOutTradeNo) {
+          paymentData.out_trade_no = wechatOutTradeNo;
+        }
 
         let insertError: any = null;
 

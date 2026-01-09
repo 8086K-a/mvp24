@@ -87,6 +87,8 @@ import co.median.android.widget.SwipeHistoryNavigationLayout;
 import co.median.android.widget.WebViewContainerView;
 import co.median.android.WeChatLoginManager;
 import co.median.android.WeChatLoginManager.WeChatLoginResult;
+import co.median.android.WeChatPayManager;
+import co.median.android.WeChatPayManager.WeChatPayResult;
 import co.median.median_core.AppConfig;
 import co.median.median_core.Bridge;
 import co.median.median_core.GNLog;
@@ -165,6 +167,7 @@ public class MainActivity extends AppCompatActivity implements Observer,
     private FileWriterSharer fileWriterSharer;
     private LoginManager loginManager;
     private WeChatLoginManager weChatLoginManager;
+    private WeChatPayManager weChatPayManager;
     private RegistrationManager registrationManager;
     private ConnectivityChangeReceiver connectivityReceiver;
     private KeyboardManager keyboardManager;
@@ -288,6 +291,8 @@ public class MainActivity extends AppCompatActivity implements Observer,
         this.loginManager = application.getLoginManager();
         this.weChatLoginManager = new WeChatLoginManager(this);
         this.weChatLoginManager.setListener(this::handleWeChatLoginResult);
+        this.weChatPayManager = new WeChatPayManager(this);
+        this.weChatPayManager.setListener(this::handleWeChatPayResult);
 
         this.fileWriterSharer = new FileWriterSharer(this);
         this.fileDownloader = new FileDownloader(this);
@@ -721,6 +726,7 @@ public class MainActivity extends AppCompatActivity implements Observer,
 
         if (fileDownloader != null) fileDownloader.unbindDownloadService();
         if (weChatLoginManager != null) weChatLoginManager.unregister();
+        if (weChatPayManager != null) weChatPayManager.unregister();
 
         // destroy webview
         if (this.mWebview != null) {
@@ -1484,6 +1490,12 @@ public class MainActivity extends AppCompatActivity implements Observer,
         }
     }
 
+    public void startWeChatPay(String callback, String payload) {
+        if (weChatPayManager != null) {
+            weChatPayManager.startPay(callback, payload);
+        }
+    }
+
     private void handleWeChatLoginResult(WeChatLoginResult result) {
         if (result == null || TextUtils.isEmpty(result.callback)) return;
 
@@ -1496,6 +1508,20 @@ public class MainActivity extends AppCompatActivity implements Observer,
             runJavascript(LeanUtils.createJsForCallback(result.callback, payload));
         } catch (JSONException e) {
             GNLog.getInstance().logError(TAG, "Failed to deliver WeChat login result", e);
+        }
+    }
+
+    private void handleWeChatPayResult(WeChatPayResult result) {
+        if (result == null || TextUtils.isEmpty(result.callback)) return;
+
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("errCode", result.errCode);
+            payload.put("errStr", result.errStr);
+            payload.put("outTradeNo", result.outTradeNo);
+            runJavascript(LeanUtils.createJsForCallback(result.callback, payload));
+        } catch (JSONException e) {
+            GNLog.getInstance().logError(TAG, "Failed to deliver WeChat pay result", e);
         }
     }
 

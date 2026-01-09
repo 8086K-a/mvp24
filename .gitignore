@@ -55,3 +55,4 @@ test-models.mjs
 
 # Local development
 .turbo/
+.vercel

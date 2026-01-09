@@ -256,6 +256,15 @@ public class UrlNavigation {
             return true;
         }
 
+        if ("wechat-pay".equals(uri.getScheme())) {
+            if (noAction) return true;
+
+            String callback = uri.getQueryParameter("callback");
+            String payload = uri.getQueryParameter("payload");
+            mainActivity.startWeChatPay(callback, payload);
+            return true;
+        }
+
         final AppConfig appConfig = AppConfig.getInstance(mainActivity);
         // Check native bridge urls
         if (("median".equals(uri.getScheme()) || "gonative".equals(uri.getScheme())) && currentWebviewUrl != null &&

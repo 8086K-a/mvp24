@@ -129,6 +129,7 @@ android {
             storePassword RELEASE_STORE_PASSWORD
             keyAlias RELEASE_KEY_ALIAS
             keyPassword RELEASE_KEY_PASSWORD
+            storeFile file('/Users/8086k/Documents/keystores/multigpt-key.jks')
         }
     }
 

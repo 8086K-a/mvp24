@@ -307,6 +307,7 @@ export async function saveMultiAIMessage(messageData: {
     status: string;
     timestamp: Date;
   }>;
+  task_graph?: unknown;
 }) {
   try {
     const db = getCloudBaseApp().database();
@@ -324,6 +325,7 @@ export async function saveMultiAIMessage(messageData: {
         content: messageData.ai_responses,
         isMultiAI: true,
         timestamp: new Date().toISOString(),
+        ...(messageData.task_graph ? { taskGraph: messageData.task_graph } : {}),
       }
     ];
 

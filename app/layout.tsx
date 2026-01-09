@@ -52,7 +52,7 @@ export default function RootLayout({
                 </Suspense>
                 {/* Global toast portal */}
                 <Toaster />
-                {/* H5 日志控制台 - 仅在小程序或调试模式显示 */}
+                {/* H5 日志控制台 - 仅在 debug=true 时显示 */}
                 <WebLogConsole />
               </UserProvider>
             </AppProvider>

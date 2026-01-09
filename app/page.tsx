@@ -36,7 +36,7 @@ function PlatformContent() {
   const [availableAIs, setAvailableAIs] = useState<AIAgent[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [collaborationMode, setCollaborationMode] = useState<
-    "parallel" | "sequential" | "deep"
+    "parallel" | "sequential" | "deep" | "graph"
   >("parallel");
 
   const { activeView, setActiveView } = useApp();
@@ -196,10 +196,17 @@ function PlatformContent() {
               agentId: aiResponse.agentId,
               agentName: aiResponse.agentName,
               content: aiResponse.content,
+              model: aiResponse.model,
+              nodeId: aiResponse.nodeId,
+              nodeTitle: aiResponse.nodeTitle,
+              dependsOn: aiResponse.dependsOn,
+              tokens: aiResponse.tokens,
+              cost: aiResponse.cost,
               status: aiResponse.status || "completed",
               timestamp: new Date(aiResponse.timestamp || Date.now()),
             })),
             isMultiAI: true,
+            taskGraph: msg.taskGraph,
             timestamp: new Date(msg.timestamp || msg.created_at || Date.now()),
           };
         }

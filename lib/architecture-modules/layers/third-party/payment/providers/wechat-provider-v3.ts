@@ -20,6 +20,22 @@ interface CreateNativeOrderParams {
   clientIp?: string;              // 客户端IP
 }
 
+interface CreateAppOrderParams {
+  out_trade_no: string;           // 商户订单号
+  amount: number;                 // 金额（分）
+  description: string;            // 商品描述
+}
+
+export interface WechatAppPayParams {
+  appid: string;
+  partnerid: string;
+  prepayid: string;
+  package: string;
+  noncestr: string;
+  timestamp: string;
+  sign: string;
+}
+
 interface PaymentStatus {
   tradeState: string;             // SUCCESS | NOTPAY | CLOSED | REFUND | REVOKED | USERPAYING | PAYERROR
   transactionId?: string;         // 微信支付订单号
@@ -149,6 +165,51 @@ export class WechatProviderV3 {
       };
     } catch (error) {
       console.error('WeChat createNativePayment error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * APP 支付下单
+   * 返回 prepay_id 以及客户端拉起微信支付所需参数
+   */
+  async createAppPayment(
+    params: CreateAppOrderParams
+  ): Promise<{ prepayId: string; appPayParams: WechatAppPayParams }> {
+    try {
+      const requestBody = {
+        appid: this.config.appId,
+        mchid: this.config.mchId,
+        description: params.description,
+        out_trade_no: params.out_trade_no,
+        notify_url: this.config.notifyUrl,
+        amount: {
+          total: params.amount,
+          currency: 'CNY',
+        },
+      };
+
+      console.log('[WeChat] APP 支付请求体:', JSON.stringify(requestBody, null, 2));
+
+      const response = await this.requestWithSignature(
+        'POST',
+        '/v3/pay/transactions/app',
+        requestBody
+      );
+
+      const prepayId = response.prepay_id;
+      if (!prepayId) {
+        throw new Error('No prepay_id in WeChat response');
+      }
+
+      const appPayParams = this.buildAppPayParams(prepayId);
+
+      return {
+        prepayId,
+        appPayParams,
+      };
+    } catch (error) {
+      console.error('WeChat createAppPayment error:', error);
       throw error;
     }
   }
@@ -434,6 +495,34 @@ export class WechatProviderV3 {
       console.error('WeChat signature building error:', error);
       throw new Error('Failed to build signature');
     }
+  }
+
+  /**
+   * 构建 APP 支付参数（客户端 PayReq）签名
+   * 签名串格式: appid\n timestamp\n nonceStr\n prepay_id=xxx\n
+   */
+  private buildAppPayParams(prepayId: string): WechatAppPayParams {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const nonceStr = this.generateNonce();
+    const pkg = `Sign=WXPay`;
+
+    const message = `${this.config.appId}\n${timestamp}\n${nonceStr}\nprepay_id=${prepayId}\n`;
+    const privateKey = this.formatPrivateKey(this.config.privateKey);
+
+    const sign = crypto
+      .createSign('RSA-SHA256')
+      .update(message)
+      .sign(privateKey, 'base64');
+
+    return {
+      appid: this.config.appId,
+      partnerid: this.config.mchId,
+      prepayid: prepayId,
+      package: pkg,
+      noncestr: nonceStr,
+      timestamp,
+      sign,
+    };
   }
 
   /**

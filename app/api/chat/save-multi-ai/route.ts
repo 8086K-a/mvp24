@@ -9,6 +9,7 @@ import { verifyAuthToken, extractTokenFromHeader } from "@/lib/auth-utils";
 import { isChinaRegion } from "@/lib/config/region";
 import { saveMultiAIMessage } from "@/lib/cloudbase-db";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { TaskGraphExecutionRun, TaskGraphSpec } from "@/types/task-graph";
 
 export const runtime = "nodejs";
 
@@ -47,10 +48,11 @@ export async function POST(req: NextRequest) {
 
     // 解析请求体
     const body = await req.json();
-    const { sessionId, userMessage, aiResponses } = body as {
+    const { sessionId, userMessage, aiResponses, taskGraph } = body as {
       sessionId: string;
       userMessage: string;
       aiResponses: AIResponse[];
+      taskGraph?: { spec: TaskGraphSpec; run?: TaskGraphExecutionRun };
     };
 
     if (!sessionId || !userMessage || !aiResponses || aiResponses.length === 0) {
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
         user_id: userId,
         user_message: userMessage,
         ai_responses: aiResponses,
+        task_graph: taskGraph,
       });
 
       if (result.error) {
@@ -135,11 +138,18 @@ export async function POST(req: NextRequest) {
             content: response.content,
             status: response.status,
             timestamp: response.timestamp,
+            // task-graph node metadata (optional)
+            nodeId: (response as any).nodeId,
+            nodeTitle: (response as any).nodeTitle,
+            dependsOn: (response as any).dependsOn,
+            tokens: (response as any).tokens,
+            cost: (response as any).cost,
           })),
           role: "assistant",
           timestamp,
           tokens_used: 0,
           isMultiAI: true,
+          ...(taskGraph ? { taskGraph } : {}),
         });
 
         // 4. 更新会话的消息数组

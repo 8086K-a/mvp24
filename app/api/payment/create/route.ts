@@ -235,6 +235,7 @@ async function handlePaymentCreate(request: NextRequest) {
           operationId,
           userId: user.id,
           amount,
+          channel,
         });
 
         if (!isChinaRegion()) {
@@ -261,19 +262,35 @@ async function handlePaymentCreate(request: NextRequest) {
           notifyUrl: `${process.env.APP_URL}/api/payment/webhook/wechat`,
         });
 
-        const wechatResponse = await wechatProvider.createNativePayment({
-          out_trade_no,
-          amount: Math.round(amount * 100),
-          description: order.description,
-        });
+        if (channel === "app") {
+          const wechatResponse = await wechatProvider.createAppPayment({
+            out_trade_no,
+            amount: Math.round(amount * 100),
+            description: order.description,
+          });
 
-        result = {
-          success: true,
-          paymentId: out_trade_no,
-          paymentUrl: wechatResponse.codeUrl,
-          codeUrl: wechatResponse.codeUrl,
-          transactionId: out_trade_no,
-        };
+          result = {
+            success: true,
+            paymentId: out_trade_no,
+            transactionId: out_trade_no,
+            prepayId: wechatResponse.prepayId,
+            appPayParams: wechatResponse.appPayParams,
+          };
+        } else {
+          const wechatResponse = await wechatProvider.createNativePayment({
+            out_trade_no,
+            amount: Math.round(amount * 100),
+            description: order.description,
+          });
+
+          result = {
+            success: true,
+            paymentId: out_trade_no,
+            paymentUrl: wechatResponse.codeUrl,
+            codeUrl: wechatResponse.codeUrl,
+            transactionId: out_trade_no,
+          };
+        }
       } else {
         return NextResponse.json(
           { success: false, error: `Unsupported payment method: ${method}` },
@@ -330,8 +347,10 @@ async function handlePaymentCreate(request: NextRequest) {
 
       if (method === "wechat") {
         paymentData.out_trade_no = result.paymentId;
-        paymentData.code_url = result.codeUrl;
-        paymentData.client_type = "native";
+        paymentData.client_type = channel === "app" ? "app" : "native";
+        if (result.codeUrl) {
+          paymentData.code_url = result.codeUrl;
+        }
       }
 
       try {

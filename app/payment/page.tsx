@@ -239,6 +239,14 @@ export default function PaymentPage() {
   const handlePaymentSuccess = (result: any) => {
     setPaymentResult(result);
 
+    const isGoNativeShell = () => {
+      if (typeof window === "undefined") return false;
+      const w = window as any;
+      if (w?.median || w?.gonative) return true;
+      const ua = (navigator.userAgent || "").toLowerCase();
+      return ua.includes("gonative") || ua.includes("median");
+    };
+
     // ✅ 支付宝 App 通道：服务端返回 orderString，直接唤起支付宝 App（避免 WebView 表单/新窗口导致“双弹”）
     if (
       result?._paymentMethod === "alipay" &&
@@ -258,6 +266,64 @@ export default function PaymentPage() {
       window.location.href = `/payment/success?out_trade_no=${encodeURIComponent(
         result.paymentId
       )}`;
+      return;
+    }
+
+    // ✅ 微信 App 通道：服务端返回 appPayParams，通过自定义 scheme 拉起原生微信支付
+    if (
+      result?._paymentMethod === "wechat" &&
+      isGoNativeShell() &&
+      result?.appPayParams &&
+      typeof result?.paymentId === "string" &&
+      result.paymentId
+    ) {
+      const callbackName = "__wechatNativePayCallback";
+
+      (window as any)[callbackName] = (payload: any) => {
+        try {
+          if (!payload || typeof payload !== "object") {
+            throw new Error("微信支付失败：无效回调");
+          }
+
+          // errCode: 0=成功，-1=错误，-2=取消
+          if (payload.errCode !== 0) {
+            const msg = payload.errStr || "微信支付已取消或失败";
+            toast({
+              title: t.payment.messages.failed,
+              description: String(msg),
+              variant: "destructive",
+            });
+            return;
+          }
+
+          const outTradeNo =
+            typeof payload.outTradeNo === "string" && payload.outTradeNo
+              ? payload.outTradeNo
+              : result.paymentId;
+
+          // 跳转到成功页，由 success 页面统一调用 /api/payment/confirm（主路径）
+          window.location.href = `/payment/success?wechat_out_trade_no=${encodeURIComponent(
+            outTradeNo
+          )}`;
+        } catch (e: any) {
+          toast({
+            title: t.payment.messages.failed,
+            description: e?.message || "微信支付失败",
+            variant: "destructive",
+          });
+        }
+      };
+
+      // payload 里既包含 appPayParams，也带上 outTradeNo 便于原生回传
+      const schemePayload = {
+        outTradeNo: result.paymentId,
+        appPayParams: result.appPayParams,
+      };
+      const encoded = btoa(JSON.stringify(schemePayload));
+      const scheme = `wechat-pay://start?callback=${encodeURIComponent(
+        callbackName
+      )}&payload=${encodeURIComponent(encoded)}`;
+      window.location.href = scheme;
       return;
     }
 

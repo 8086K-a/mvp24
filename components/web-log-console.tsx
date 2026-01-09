@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { X, Terminal, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
-import { detectPlatform } from "@/lib/platform-detection";
 
 interface LogEntry {
   id: number;
@@ -20,10 +19,9 @@ export function WebLogConsole() {
   const logIdCounter = useRef(0);
 
   useEffect(() => {
-    const platform = detectPlatform();
-    // 在小程序环境或者 URL 包含 debug=true 时显示
+    // 仅在 URL 包含 debug=true 时显示（不再因为小程序/套壳检测自动开启）
     const isDebug = new URLSearchParams(window.location.search).get("debug") === "true";
-    if (platform.isWechatMiniProgram || isDebug) {
+    if (isDebug) {
       setIsVisible(true);
     }
   }, []);

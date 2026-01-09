@@ -21,8 +21,8 @@ interface ChatToolbarProps {
   availableAIs: AIAgent[];
   sessionId?: string;
   sessionConfig?: any;
-  collaborationMode?: "parallel" | "sequential" | "deep";
-  onCollaborationModeChange?: (mode: "parallel" | "sequential" | "deep") => void;
+  collaborationMode?: "parallel" | "sequential" | "deep" | "graph";
+  onCollaborationModeChange?: (mode: "parallel" | "sequential" | "deep" | "graph") => void;
   variant?: "default" | "integrated";
 }
 

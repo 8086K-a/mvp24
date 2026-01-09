@@ -13,9 +13,11 @@ import {
   AlertCircle,
   Zap,
   Users,
+  ArrowRight,
   Clock,
   CheckCircle2,
   Brain,
+  GitBranch,
   Lightbulb,
   Target,
   Paperclip,
@@ -39,15 +41,25 @@ import { getClientAuthToken } from "@/lib/client-auth";
 import { useWorkspaceMessages } from "@/components/workspace-messages-context";
 import { ChatToolbar } from "@/components/chat-toolbar";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { TASK_GRAPH_PRESETS } from "@/data/task-graph-presets";
+import {
+  topoLayers,
+  type TaskGraphExecutionRun,
+  type TaskGraphSpec,
+} from "@/types/task-graph";
 
 interface AIResponse {
   agentId: string;
   agentName: string;
   content: string;
+  model?: string;
   tokens?: number;
   cost?: number;
   status: "pending" | "processing" | "completed" | "error";
   timestamp: Date;
+  nodeId?: string;
+  nodeTitle?: string;
+  dependsOn?: string[];
 }
 
 interface Message {
@@ -55,6 +67,7 @@ interface Message {
   role: "user" | "assistant";
   content: string | AIResponse[];
   isMultiAI?: boolean;
+  taskGraph?: { spec: TaskGraphSpec; run?: TaskGraphExecutionRun };
   timestamp: Date;
 }
 
@@ -74,8 +87,8 @@ interface GPTWorkspaceProps {
   selectedGPTs: AIAgent[];
   setSelectedGPTs: (gpts: AIAgent[]) => void;
   availableAIs: AIAgent[];
-  collaborationMode: "parallel" | "sequential" | "deep";
-  setCollaborationMode: (mode: "parallel" | "sequential" | "deep") => void;
+  collaborationMode: "parallel" | "sequential" | "deep" | "graph";
+  setCollaborationMode: (mode: "parallel" | "sequential" | "deep" | "graph") => void;
 }
 
 export function GPTWorkspace({
@@ -89,6 +102,8 @@ export function GPTWorkspace({
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiResponses, setAIResponses] = useState<AIResponse[]>([]);
+  const [activeTaskGraphSpec, setActiveTaskGraphSpec] = useState<TaskGraphSpec | null>(null);
+  const [taskGraphPresetId, setTaskGraphPresetId] = useState<string>(TASK_GRAPH_PRESETS[0]?.id || "general");
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [sessionConfig, setSessionConfig] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -96,14 +111,16 @@ export function GPTWorkspace({
   const { language } = useLanguage();
   const t = useTranslations(language);
 
-  const effectiveCollaborationMode: "parallel" | "sequential" | "deep" =
+  const effectiveCollaborationMode: "parallel" | "sequential" | "deep" | "graph" =
     sessionConfig?.collaborationMode === "sequential"
       ? "sequential"
       : sessionConfig?.collaborationMode === "parallel"
         ? "parallel"
         : sessionConfig?.collaborationMode === "deep"
           ? "deep"
-          : collaborationMode;
+          : sessionConfig?.collaborationMode === "graph"
+            ? "graph"
+            : collaborationMode;
 
   // 使用全局 Context 管理消息和会话 ID
   const {
@@ -171,9 +188,13 @@ export function GPTWorkspace({
                 cost: r.cost || 0,
                 status: "completed" as const,
                 timestamp: new Date(r.timestamp),
+                nodeId: r.nodeId,
+                nodeTitle: r.nodeTitle,
+                dependsOn: r.dependsOn,
               }))
             : msg.content,
           isMultiAI: msg.isMultiAI || false,
+          taskGraph: msg.taskGraph,
           timestamp: new Date(msg.timestamp),
         }));
 
@@ -304,17 +325,80 @@ export function GPTWorkspace({
         return;
       }
 
-      // 初始化AI响应状态（使用锁定的AI）
-      const initialResponses: AIResponse[] = lockedAIs.map((gpt: AIAgent) => ({
-        agentId: gpt.id,
-        agentName: gpt.name,
-        content: "",
-        status: "pending",
-        timestamp: new Date(),
-      }));
-      setAIResponses(initialResponses);
+      if (effectiveCollaborationMode === "graph") {
+        const preset =
+          TASK_GRAPH_PRESETS.find((p) => p.id === taskGraphPresetId) ??
+          TASK_GRAPH_PRESETS[0];
 
-      if (effectiveCollaborationMode === "parallel") {
+        const { spec, run, nodeResponses } = await handleTaskGraphMode(
+          sessId,
+          authToken,
+          userMessage.content as string,
+          lockedAIs,
+          preset?.templateHint
+        );
+
+        const finalMessage: Message = {
+          id: `ai-${Date.now()}`,
+          role: "assistant",
+          content: nodeResponses,
+          isMultiAI: true,
+          taskGraph: { spec, run },
+          timestamp: new Date(),
+        };
+
+        setIsProcessing(false);
+        setAIResponses([]);
+        setActiveTaskGraphSpec(null);
+        addMessage(finalMessage);
+
+        if (sessId) {
+          try {
+            const saveResponse = await fetch("/api/chat/save-multi-ai", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify({
+                sessionId: sessId,
+                userMessage: userMessage.content,
+                aiResponses: nodeResponses.map((r) => ({
+                  agentId: r.agentId,
+                  agentName: r.agentName,
+                  content: r.content,
+                  model: r.model || availableAIs.find((ai) => ai.id === r.agentId)?.model || "",
+                  status: r.status,
+                  timestamp: r.timestamp,
+                  nodeId: r.nodeId,
+                  nodeTitle: r.nodeTitle,
+                  dependsOn: r.dependsOn,
+                })),
+                taskGraph: { spec, run },
+              }),
+            });
+
+            if (!saveResponse.ok) {
+              console.error("[GPTWorkspace] Failed to save task-graph message");
+            }
+          } catch (error) {
+            console.error("[GPTWorkspace] Error saving task-graph message:", error);
+          }
+        }
+      } else {
+        setActiveTaskGraphSpec(null);
+
+        // 初始化AI响应状态（使用锁定的AI）
+        const initialResponses: AIResponse[] = lockedAIs.map((gpt: AIAgent) => ({
+          agentId: gpt.id,
+          agentName: gpt.name,
+          content: "",
+          status: "pending",
+          timestamp: new Date(),
+        }));
+        setAIResponses(initialResponses);
+
+        if (effectiveCollaborationMode === "parallel") {
         // 并行模式：多个AI同时处理（使用锁定的AI）
         const finalResponses = await handleParallelMode(
           sessId,
@@ -357,8 +441,10 @@ export function GPTWorkspace({
                   agentId: r.agentId,
                   agentName: r.agentName,
                   content: r.content,
-                  // ✅ 使用 lockedAIs 中的 model，而不是 selectedGPTs
-                  model: availableAIs.find((ai) => ai.id === r.agentId)?.model || "",
+                  model:
+                    r.model ||
+                    availableAIs.find((ai) => ai.id === r.agentId)?.model ||
+                    "",
                   status: r.status,
                   timestamp: r.timestamp,
                 })),
@@ -372,7 +458,7 @@ export function GPTWorkspace({
             console.error("[GPTWorkspace] Error saving multi-AI message:", error);
           }
         }
-      } else if (effectiveCollaborationMode === "deep") {
+        } else if (effectiveCollaborationMode === "deep") {
         // 深度思考模式：在提示词中加入深度思考指令
         const deepThinkingPrompt = `请进行深度思考并给出详尽的回答。在回答之前，请先在脑海中进行多维度的分析和推理。\n\n用户问题：${userMessage.content}`;
         
@@ -411,7 +497,10 @@ export function GPTWorkspace({
                   agentId: r.agentId,
                   agentName: r.agentName,
                   content: r.content,
-                  model: availableAIs.find((ai) => ai.id === r.agentId)?.model || "",
+                  model:
+                    r.model ||
+                    availableAIs.find((ai) => ai.id === r.agentId)?.model ||
+                    "",
                   status: r.status,
                   timestamp: r.timestamp,
                 })),
@@ -421,7 +510,7 @@ export function GPTWorkspace({
             console.error("[GPTWorkspace] Error saving deep thinking message:", error);
           }
         }
-      } else {
+        } else {
         // 顺序模式：逐个AI处理（失败跳过），仅展示最终结果，但运行中显示每步进度
         const result = await handleSequentialMode(
           sessId,
@@ -471,6 +560,7 @@ export function GPTWorkspace({
           } catch (error) {
             console.error("[GPTWorkspace] Error saving final message:", error);
           }
+        }
         }
       }
     } catch (error) {
@@ -860,6 +950,291 @@ export function GPTWorkspace({
     return results;
   };
 
+  const truncateForContext = (text: string, maxChars: number) => {
+    if (!text) return "";
+    if (text.length <= maxChars) return text;
+    return text.slice(0, maxChars) + "\n\n(内容已截断)";
+  };
+
+  const buildGraphNodePrompt = (
+    goal: string,
+    node: { id: string; title: string; description: string; dependsOn?: string[] },
+    depOutputs: Array<{ nodeId: string; title: string; output: string }>
+  ) => {
+    const inputs = depOutputs
+      .map(
+        (d) =>
+          `【来自上游节点：${d.title} (${d.nodeId})】\n${truncateForContext(d.output, 2000)}`
+      )
+      .join("\n\n");
+
+    return [
+      "你正在作为多专家任务图中的一个节点执行子任务。",
+      "请只产出该子任务的结果（可用 Markdown），避免输出无关解释。",
+      "",
+      `【总目标】\n${goal}`,
+      "",
+      `【当前子任务】\n${node.title}`,
+      `【子任务说明】\n${node.description}`,
+      "",
+      depOutputs.length > 0 ? `【输入（上游输出，可能有错）】\n${inputs}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
+
+  const runGraphNode = async (
+    sessionId: string,
+    token: string,
+    nodeResp: AIResponse,
+    prompt: string
+  ) => {
+    const nodeId = nodeResp.nodeId || "";
+    const gpt = availableAIs.find((ai) => ai.id === nodeResp.agentId);
+    if (!gpt) {
+      throw new Error("AI not found");
+    }
+
+    setAIResponses((prev) =>
+      prev.map((r) =>
+        r.nodeId === nodeId
+          ? { ...r, status: "processing" as const, content: "" }
+          : r
+      )
+    );
+
+    const response = await fetch("/api/chat/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        sessionId,
+        message: prompt,
+        model: gpt.model || "deepseek-chat",
+        temperature: gpt.temperature || 0.7,
+        maxTokens: gpt.maxTokens || 2048,
+        agentName: gpt.name,
+        agentId: gpt.id,
+        skipSave: true,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error: ${response.status} ${response.statusText} ${errorText}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedContent = "";
+    let totalTokens = 0;
+    let cost = 0;
+
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "content") {
+              accumulatedContent += data.content;
+              setAIResponses((prev) =>
+                prev.map((r) =>
+                  r.nodeId === nodeId
+                    ? {
+                        ...r,
+                        content: accumulatedContent,
+                        status: "processing" as const,
+                      }
+                    : r
+                )
+              );
+            } else if (data.type === "done") {
+              totalTokens = data.tokens?.total || 0;
+              cost = data.cost || 0;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    if (!totalTokens && accumulatedContent) {
+      totalTokens = Math.floor(accumulatedContent.length / 4);
+    }
+
+    setAIResponses((prev) =>
+      prev.map((r) =>
+        r.nodeId === nodeId
+          ? {
+              ...r,
+              content: accumulatedContent,
+              tokens: totalTokens,
+              cost,
+              status: "completed" as const,
+            }
+          : r
+      )
+    );
+
+    return {
+      content: accumulatedContent,
+      tokens: totalTokens,
+      cost,
+      model: gpt.model,
+      agentName: gpt.name,
+    };
+  };
+
+  const handleTaskGraphMode = async (
+    sessionId: string,
+    token: string,
+    goal: string,
+    lockedAIs: AIAgent[],
+    templateHint?: string
+  ): Promise<{
+    spec: TaskGraphSpec;
+    run: TaskGraphExecutionRun;
+    nodeResponses: AIResponse[];
+  }> => {
+    const planResponse = await fetch("/api/chat/plan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        sessionId,
+        goal,
+        templateHint,
+        maxNodes: 10,
+      }),
+    });
+
+    if (!planResponse.ok) {
+      const txt = await planResponse.text();
+      throw new Error(`Plan failed: ${planResponse.status} ${txt}`);
+    }
+
+    const planData = await planResponse.json();
+    const spec = planData.spec as TaskGraphSpec;
+    setActiveTaskGraphSpec(spec);
+
+    const lockedIds = lockedAIs.map((a) => a.id);
+    const nodesById = new Map(spec.nodes.map((n) => [n.id, n] as const));
+
+    const initialNodeResponses: AIResponse[] = spec.nodes.map((node, idx) => {
+      const assignedAgentId =
+        node.agentId && lockedIds.includes(node.agentId)
+          ? node.agentId
+          : lockedAIs[idx % Math.max(1, lockedAIs.length)]?.id;
+
+      const agent = lockedAIs.find((a) => a.id === assignedAgentId) ?? lockedAIs[0];
+      return {
+        agentId: agent?.id || assignedAgentId || "",
+        agentName: agent?.name || "AI",
+        model: agent?.model,
+        content: "",
+        status: "pending",
+        timestamp: new Date(),
+        nodeId: node.id,
+        nodeTitle: node.title,
+        dependsOn: node.dependsOn ?? [],
+      };
+    });
+
+    setAIResponses(initialNodeResponses);
+
+    const runId = `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const runCreatedAt = new Date().toISOString();
+    const outputs = new Map<string, string>();
+
+    const layers = topoLayers(spec);
+    const maxConcurrency = 3;
+
+    for (const layer of layers) {
+      for (let i = 0; i < layer.length; i += maxConcurrency) {
+        const batch = layer.slice(i, i + maxConcurrency);
+
+        await Promise.all(
+          batch.map(async (nodeId) => {
+            const node = nodesById.get(nodeId);
+            if (!node) return;
+
+            const current = initialNodeResponses.find((r) => r.nodeId === nodeId);
+            if (!current) return;
+
+            const deps = (node.dependsOn ?? []).map((depId) => {
+              const dep = nodesById.get(depId);
+              return {
+                nodeId: depId,
+                title: dep?.title || depId,
+                output: outputs.get(depId) || "",
+              };
+            });
+
+            const prompt = buildGraphNodePrompt(goal, node, deps);
+
+            try {
+              const result = await runGraphNode(sessionId, token, current, prompt);
+              outputs.set(nodeId, result.content);
+              // Keep local copy in sync (used later to build final nodeResponses)
+              current.content = result.content;
+              current.tokens = result.tokens;
+              current.cost = result.cost;
+              current.model = result.model;
+              current.agentName = result.agentName;
+              current.status = "completed";
+              current.timestamp = new Date();
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setAIResponses((prev) =>
+                prev.map((r) =>
+                  r.nodeId === nodeId
+                    ? { ...r, status: "error" as const, content: `Error: ${msg}` }
+                    : r
+                )
+              );
+              current.status = "error";
+              current.content = `Error: ${msg}`;
+              current.timestamp = new Date();
+            }
+          })
+        );
+      }
+    }
+
+    const finishedAt = new Date().toISOString();
+    const nodeResponses = initialNodeResponses.map((r) => ({ ...r }));
+
+    const run: TaskGraphExecutionRun = {
+      runId,
+      createdAt: runCreatedAt,
+      finishedAt,
+      nodes: nodeResponses.map((r) => ({
+        nodeId: r.nodeId || "",
+        status: r.status === "processing" ? "running" : r.status,
+        agentId: r.agentId,
+        agentName: r.agentName,
+        model: r.model || "",
+        startedAt: undefined,
+        finishedAt: r.timestamp?.toISOString?.() ?? new Date().toISOString(),
+        output: r.status === "completed" ? r.content : undefined,
+        error: r.status === "error" ? r.content : undefined,
+      })),
+    };
+
+    return { spec, run, nodeResponses };
+  };
+
 
   const createSession = async (token: string, firstMessage: string): Promise<string> => {
     try {
@@ -1027,9 +1402,57 @@ export function GPTWorkspace({
                   </div>
                 )}
 
-                {(message.content as AIResponse[]).map((aiResp) => (
+                {/* Task Graph circuit view (if present) */}
+                {(message as any).taskGraph?.spec && (
+                  <Card className="p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <GitBranch className="w-4 h-4 text-blue-600" />
+                      <div className="text-sm font-semibold text-blue-900">任务图（2.0）</div>
+                      <Badge variant="outline" className="text-xs">
+                        {((message as any).taskGraph?.spec?.nodes?.length as number) || 0} 节点
+                      </Badge>
+                    </div>
+                    <div className="space-y-3">
+                      {topoLayers((message as any).taskGraph.spec as TaskGraphSpec).map(
+                        (layer, idx, arr) => (
+                          <div key={`layer-${idx}`} className="flex items-center flex-wrap gap-2">
+                            {layer.map((nodeId) => {
+                              const specNode = ((message as any).taskGraph.spec as TaskGraphSpec).nodes.find(
+                                (n) => n.id === nodeId
+                              );
+                              const resp = (message.content as AIResponse[]).find(
+                                (r) => r.nodeId === nodeId
+                              );
+                              return (
+                                <div key={nodeId} className="flex items-center gap-2">
+                                  <Card className="px-3 py-2 bg-white border-gray-200 min-w-[180px]">
+                                    <div className="text-xs font-semibold text-gray-800 line-clamp-1">
+                                      {specNode?.title || nodeId}
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">
+                                      {(resp?.agentName || specNode?.agentId || "AI") +
+                                        (resp?.model ? ` · ${resp.model}` : "")}
+                                    </div>
+                                  </Card>
+                                  {idx < arr.length - 1 && (
+                                    <div className="h-px w-6 bg-blue-200" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {idx < arr.length - 1 && (
+                              <ArrowRight className="w-4 h-4 text-blue-300" />
+                            )}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </Card>
+                )}
+
+                {(message.content as AIResponse[]).map((aiResp, idx) => (
                   <div
-                    key={aiResp.agentId}
+                    key={aiResp.nodeId || `${aiResp.agentId}-${idx}`}
                     className="flex items-start space-x-3 group"
                   >
                     <div
@@ -1043,8 +1466,13 @@ export function GPTWorkspace({
                     <div className="flex-1 max-w-xs sm:max-w-2xl lg:max-w-3xl">
                       <div className="flex items-center space-x-2 mb-2">
                         <span className="font-medium text-sm">
-                          {aiResp.agentName}
+                          {aiResp.nodeTitle ? `${aiResp.nodeTitle} · ${aiResp.agentName}` : aiResp.agentName}
                         </span>
+                        {aiResp.model && (
+                          <Badge variant="outline" className="text-xs">
+                            {aiResp.model}
+                          </Badge>
+                        )}
                         <Badge variant="outline" className="text-xs">
                           {aiResp.status === "completed"
                             ? t.workspace.completed
@@ -1225,10 +1653,55 @@ export function GPTWorkspace({
               </Badge>
             </div>
 
+            {activeTaskGraphSpec && (
+              <Card className="p-3 bg-white/60 border-blue-100 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <GitBranch className="w-4 h-4 text-blue-600" />
+                  <div className="text-sm font-semibold text-blue-900">任务图执行中</div>
+                  <Badge variant="outline" className="text-xs">
+                    {activeTaskGraphSpec.nodes.length} 节点
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    {TASK_GRAPH_PRESETS.find((p) => p.id === taskGraphPresetId)?.name || "模板"}
+                  </Badge>
+                </div>
+
+                <div className="space-y-3">
+                  {topoLayers(activeTaskGraphSpec).map((layer, idx, arr) => (
+                    <div key={`live-layer-${idx}`} className="flex items-center flex-wrap gap-2">
+                      {layer.map((nodeId) => {
+                        const node = activeTaskGraphSpec.nodes.find((n) => n.id === nodeId);
+                        const r = aiResponses.find((x) => x.nodeId === nodeId);
+                        return (
+                          <div key={nodeId} className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 min-w-[200px]">
+                              <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(r?.status || "pending")}`} />
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-gray-800 truncate">
+                                  {node?.title || nodeId}
+                                </div>
+                                <div className="text-[11px] text-gray-500 truncate">
+                                  {(r?.agentName || node?.agentId || "AI") + (r?.model ? ` · ${r.model}` : "")}
+                                </div>
+                              </div>
+                            </div>
+                            {idx < arr.length - 1 && <div className="h-px w-6 bg-blue-200" />}
+                          </div>
+                        );
+                      })}
+                      {idx < arr.length - 1 && (
+                        <ArrowRight className="w-4 h-4 text-blue-300" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             <div className="space-y-3">
-              {aiResponses.map((aiResp) => (
+              {aiResponses.map((aiResp, idx) => (
                 <div
-                  key={aiResp.agentId}
+                  key={aiResp.nodeId || `${aiResp.agentId}-${idx}`}
                   className="flex items-start space-x-3 group"
                 >
                   <div
@@ -1242,8 +1715,13 @@ export function GPTWorkspace({
                   <div className="flex-1 max-w-xs sm:max-w-2xl lg:max-w-3xl">
                     <div className="flex items-center space-x-2 mb-2">
                       <span className="font-medium text-sm">
-                        {aiResp.agentName}
+                        {aiResp.nodeTitle ? `${aiResp.nodeTitle} · ${aiResp.agentName}` : aiResp.agentName}
                       </span>
+                      {aiResp.model && (
+                        <Badge variant="outline" className="text-xs">
+                          {aiResp.model}
+                        </Badge>
+                      )}
                       <Badge variant="outline" className="text-xs">
                         {aiResp.status === "completed"
                           ? t.workspace.completed
@@ -1415,6 +1893,36 @@ export function GPTWorkspace({
                   <Brain className={`w-3.5 h-3.5 ${effectiveCollaborationMode === "deep" ? "text-purple-500" : "text-gray-400"}`} />
                   <span>深度</span>
                 </Button>
+
+                <Button
+                  variant={effectiveCollaborationMode === "graph" ? "secondary" : "outline"}
+                  size="sm"
+                  className={`h-7 sm:h-8 px-1.5 sm:px-2.5 rounded-lg gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-medium flex-shrink-0 transition-all ${
+                    effectiveCollaborationMode === "graph"
+                      ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                  }`}
+                  onClick={() => setCollaborationMode("graph")}
+                  title="任务图（拆分并编排执行）"
+                >
+                  <GitBranch className={`w-3.5 h-3.5 ${effectiveCollaborationMode === "graph" ? "text-indigo-600" : "text-gray-400"}`} />
+                  <span>任务图</span>
+                </Button>
+
+                {effectiveCollaborationMode === "graph" && (
+                  <select
+                    className="h-7 sm:h-8 px-2 rounded-lg border border-gray-200 bg-white text-[10px] sm:text-xs text-gray-700"
+                    value={taskGraphPresetId}
+                    onChange={(e) => setTaskGraphPresetId(e.target.value)}
+                    aria-label="任务图模板"
+                  >
+                    {TASK_GRAPH_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* 右侧：功能图标 + 模型选择 + 发送 */}
